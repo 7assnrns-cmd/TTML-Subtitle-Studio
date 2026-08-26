@@ -1,0 +1,6 @@
+{
+  "name": "TTML Subtitle Studio",
+  "description": "Word-level and pause-aware Timed Text Markup Language (TTML) generator powered by Gemini audio analysis.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
