@@ -19,7 +19,9 @@ import { AudioAnalysisResult, TTMLConfig, WordTiming, ParagraphSegment, PauseEve
 import { SAMPLE_DATASETS, createSyntheticAudioBuffer } from './utils/audioSamples';
 import { calculateTimingStats } from './utils/ttmlGenerator';
 import { optimizeAndChunkAudio, AudioChunk } from './utils/audioOptimizer';
+import { separateGluedWords, recalibrateWordTimestamps } from './utils/wordSplitting';
 import { UILanguage, getTranslation } from './utils/i18n';
+import { loadSavedTheme, applyThemeVariables } from './utils/theme';
 import { AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
 
 const DEFAULT_CONFIG: TTMLConfig = {
@@ -40,6 +42,8 @@ const DEFAULT_CONFIG: TTMLConfig = {
   splitSentencesOnLongPauses: true,
   enableTextOutline: true,
   emitPerWordLang: true,
+  enable120HzMode: true,
+  themeConfig: loadSavedTheme(),
 };
 
 const INITIAL_LIVE_STATE: LiveAnalysisState = {
@@ -89,6 +93,11 @@ export default function App() {
 
   const t = (key: string) => getTranslation(uiLanguage, key);
 
+  // Apply theme variables (blur, border opacity, accent colors) on startup and configuration update
+  useEffect(() => {
+    applyThemeVariables(config.themeConfig);
+  }, [config.themeConfig]);
+
   // Load default initial sample for an immediate rich experience
   useEffect(() => {
     loadSampleDataset('japanese-english-song');
@@ -130,9 +139,7 @@ export default function App() {
   };
 
   /**
-   * Parallel Chunking & Zero-Loss Word Merging Engine
-   * Executes chunk analysis with controlled concurrency to prevent timeouts and maximize throughput,
-   * then stitches tokens together with seamless zero-loss boundary preservation.
+   * High-Performance Cloud AI Audio Ingestion Handler
    */
   const handleAnalyzeAudio = async (
     fileOrBlob: File | Blob,
@@ -148,20 +155,24 @@ export default function App() {
     setLastFailedFile({ file: fileOrBlob, filename: uploadedFilename, mimeType });
 
     const startTime = Date.now();
+
     setLiveState({
       isActive: true,
       currentChunk: 1,
       totalChunks: 1,
       currentStep: 'Decoding audio stream into acoustic buffer...',
-      progressPercent: 5,
+      progressPercent: 10,
       extractedWordsCount: 0,
       extractedParagraphsCount: 0,
       streamedWords: [],
       detectedLanguages: mode === 'manual' && targetLang ? [targetLang] : [],
-      currentSongPart: 'Intro',
+      currentSongPart: 'Verse',
       elapsedSeconds: 0,
       estimatedWpm: 0,
-      logs: [{ time: '00:00.0', text: `Initiating parallel ingestion for ${uploadedFilename} [${mode === 'auto' ? 'Universal Auto' : targetLang.toUpperCase()}]` }],
+      logs: [{
+        time: '00:00.0',
+        text: `[Cloud AI Pipeline] Initiating fast parallel ingestion for ${uploadedFilename} [${mode === 'auto' ? 'Universal Auto' : targetLang.toUpperCase()}]`
+      }],
     });
 
     if (timerRef.current) clearInterval(timerRef.current);
@@ -219,6 +230,9 @@ export default function App() {
       // Array to store chunk results in indexed order
       const chunkResults: (any | null)[] = new Array(totalChunks).fill(null);
       const detectedLanguagesSet = new Set<string>();
+      const detectedAgentsMap = new Map<string, any>();
+      detectedAgentsMap.set('v1', { id: 'v1', name: 'Lead Vocalist', type: 'person', role: 'lead' });
+
       if (mode === 'manual' && targetLang) {
         detectedLanguagesSet.add(targetLang);
       }
@@ -281,6 +295,11 @@ export default function App() {
         }
         if (Array.isArray(chunkData.detectedLanguages)) {
           chunkData.detectedLanguages.forEach((l: string) => detectedLanguagesSet.add(l));
+        }
+        if (Array.isArray(chunkData.agents)) {
+          chunkData.agents.forEach((ag: any) => {
+            if (ag && ag.id) detectedAgentsMap.set(ag.id, ag);
+          });
         }
 
         const chunkParas: ParagraphSegment[] = chunkData.paragraphs || [];
@@ -359,23 +378,67 @@ export default function App() {
           const pId = `p${globalParaIndex++}`;
           const rawWords = p.words || [];
           const unifiedWords: WordTiming[] = [];
+          const pIsBg = Boolean(p.isBackground || p.role === 'harmony' || p.role === 'background');
+          const pAgentId = p.agentId || (pIsBg ? 'v_bg' : 'v1');
 
           for (const w of rawWords) {
-            const wId = `w${globalWordIndex++}`;
-            const wordObj: WordTiming = {
-              id: wId,
-              word: String(w.word || '').trim(),
-              start: Number((Number(w.start) || 0).toFixed(3)),
-              end: Number((Number(w.end) || (Number(w.start) || 0) + 0.3).toFixed(3)),
-              duration: Number(Math.max(0.01, (Number(w.end) || 0) - (Number(w.start) || 0)).toFixed(3)),
-              pauseAfter: Number((w.pauseAfter || 0).toFixed(3)),
-              pauseType: w.pauseType || 'none',
-              confidence: Number((w.confidence ?? 0.95).toFixed(2)),
-              lang: w.lang || (p.lang !== primaryTrackLanguage ? p.lang : undefined),
-            };
+            const rawWordStr = String(w.word || '').trim();
+            const subTokens = separateGluedWords(rawWordStr);
+            const wStart = Number((Number(w.start) || 0).toFixed(3));
+            const wEnd = Number((Number(w.end) || wStart + 0.3).toFixed(3));
+            const totalSpan = Math.max(0.04 * subTokens.length, wEnd - wStart);
+            const wIsBg = w.isBackground ?? pIsBg;
+            const wAgent = w.agentId || pAgentId;
 
-            unifiedWords.push(wordObj);
-            stitchedWords.push(wordObj);
+            if (subTokens.length > 1) {
+              const totalChars = subTokens.reduce((sum, token) => sum + Math.max(1, token.length), 0);
+              let runningStart = wStart;
+
+              subTokens.forEach((token, subIdx) => {
+                const charRatio = Math.max(1, token.length) / totalChars;
+                const subDuration = Number(Math.max(0.03, totalSpan * charRatio).toFixed(3));
+                const subEnd = subIdx === subTokens.length - 1 ? wEnd : Number((runningStart + subDuration).toFixed(3));
+                const subId = `w${globalWordIndex++}`;
+
+                const wordObj: WordTiming = {
+                  id: subId,
+                  word: token,
+                  start: Number(runningStart.toFixed(3)),
+                  end: Number(subEnd.toFixed(3)),
+                  duration: Number(Math.max(0.01, subEnd - runningStart).toFixed(3)),
+                  pauseAfter: subIdx === subTokens.length - 1 ? Number((w.pauseAfter || 0).toFixed(3)) : 0,
+                  pauseType: subIdx === subTokens.length - 1 ? w.pauseType || 'none' : 'none',
+                  confidence: Number((w.confidence ?? 0.95).toFixed(2)),
+                  lang: w.lang || (p.lang !== primaryTrackLanguage ? p.lang : undefined),
+                  agentId: wAgent,
+                  role: w.role || p.role,
+                  isBackground: wIsBg,
+                };
+
+                unifiedWords.push(wordObj);
+                stitchedWords.push(wordObj);
+                runningStart = subEnd;
+              });
+            } else {
+              const wId = `w${globalWordIndex++}`;
+              const wordObj: WordTiming = {
+                id: wId,
+                word: subTokens[0] || rawWordStr,
+                start: wStart,
+                end: wEnd,
+                duration: Number(Math.max(0.01, wEnd - wStart).toFixed(3)),
+                pauseAfter: Number((w.pauseAfter || 0).toFixed(3)),
+                pauseType: w.pauseType || 'none',
+                confidence: Number((w.confidence ?? 0.95).toFixed(2)),
+                lang: w.lang || (p.lang !== primaryTrackLanguage ? p.lang : undefined),
+                agentId: wAgent,
+                role: w.role || p.role,
+                isBackground: wIsBg,
+              };
+
+              unifiedWords.push(wordObj);
+              stitchedWords.push(wordObj);
+            }
           }
 
           const lineText = unifiedWords.map((w) => w.word.trim()).join(' ').replace(/\s+/g, ' ').trim();
@@ -387,10 +450,25 @@ export default function App() {
             end: unifiedWords[unifiedWords.length - 1]?.end ?? p.end,
             lang: p.lang || primaryTrackLanguage,
             songPart: p.songPart,
+            agentId: pAgentId,
+            role: p.role,
+            isBackground: pIsBg,
             words: unifiedWords,
           });
         }
       }
+
+      // Strictly recalibrate all word micro-timestamps against total decoded duration
+      const recalibratedWords = recalibrateWordTimestamps(stitchedWords, decodedDuration);
+      // Map recalibrated words back into their paragraphs
+      const wordMap = new Map(recalibratedWords.map((w) => [w.id, w]));
+      stitchedParagraphs.forEach((p) => {
+        p.words = p.words.map((w) => (wordMap.get(w.id) as WordTiming) || w);
+        if (p.words.length > 0) {
+          p.start = p.words[0].start;
+          p.end = p.words[p.words.length - 1].end;
+        }
+      });
 
       // Compute precise inter-word acoustic pauses across the entire stitched timeline
       const pauseEvents: PauseEvent[] = [];
@@ -469,6 +547,7 @@ export default function App() {
         ...prev,
         title: derivedTitle || uploadedFilename.replace(/\.[^/.]+$/, ''),
         language: primaryTrackLanguage,
+        agents: Array.from(detectedAgentsMap.values()),
       }));
 
       setLiveState((prev) => ({
@@ -548,7 +627,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden box-border bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       {/* Universal Navigation Header with UI Language Switcher */}
       <Header
         onLoadSample={loadSampleDataset}
@@ -572,7 +651,7 @@ export default function App() {
       />
 
       {/* Main Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 box-border overflow-x-hidden">
         {/* Error Notification Banner with Instant Retry */}
         {errorMessage && (
           <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg animate-in fade-in">
@@ -620,7 +699,7 @@ export default function App() {
           <LiveAudioAnalyzer state={liveState} filename={filename} uiLanguage={uiLanguage} />
         )}
 
-        {/* Top: Upload & Audio Ingestion Section with Universal & Manual Language Controls */}
+        {/* Top: Upload & Audio Ingestion Section */}
         {!isAnalyzing && (
           <AudioUploader
             onAnalyzeAudio={handleAnalyzeAudio}
@@ -658,7 +737,7 @@ export default function App() {
               uiLanguage={uiLanguage}
             />
 
-            {/* 2-Column Responsive Workspace: Subtitle Preview + TTML XML Code Viewer */}
+            {/* 2-Column Responsive Workspace: Subtitle Preview + TTML XML / LRC Code Viewer */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Column 1: Live Karaoke Subtitle Preview Screen */}
               <SubtitleKaraokePreview
@@ -670,7 +749,7 @@ export default function App() {
                 uiLanguage={uiLanguage}
               />
 
-              {/* Column 2: Raw Apple Music TTML XML Code Viewer & Direct Download */}
+              {/* Column 2: Dual TTML XML & LRC Code Viewer with Direct Download & Native Share */}
               <TTMLCodeViewer
                 paragraphs={analysisResult.paragraphs}
                 config={config}

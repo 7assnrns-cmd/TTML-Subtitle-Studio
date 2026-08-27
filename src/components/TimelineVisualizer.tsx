@@ -110,12 +110,15 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col space-y-4">
+    <div className="relative overflow-hidden glass-panel rounded-2xl p-5 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] flex flex-col space-y-4 max-w-full box-border">
+      {/* Ambient background glow */}
+      <div className="absolute top-0 left-1/3 w-80 h-36 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+
       {/* Title & Filters */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 z-10 relative">
         <div>
           <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-400" />
+            <Layers className="w-4 h-4 text-cyan-400" />
             {t('timelineTitle')}
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -127,30 +130,30 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
         <div className="flex items-center flex-wrap gap-2">
           {/* Search bar */}
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Search words..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 w-36 sm:w-44"
+              className="pl-8 pr-3 py-1.5 bg-slate-950/80 backdrop-blur-md border border-white/10 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 w-36 sm:w-44"
             />
           </div>
 
           {/* Filter options */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs flex-wrap">
+          <div className="flex items-center gap-1 bg-slate-950/80 backdrop-blur-md p-1 rounded-xl border border-white/10 text-xs flex-wrap">
             <button
               onClick={() => setFilterType('all')}
-              className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-                filterType === 'all' ? 'bg-indigo-600 text-white font-medium shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterType === 'all' ? 'bg-indigo-600 text-white font-medium shadow-sm ring-1 ring-white/20' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               All ({words.length})
             </button>
             <button
               onClick={() => setFilterType('pauses')}
-              className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-                filterType === 'pauses' ? 'bg-indigo-600 text-white font-medium shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                filterType === 'pauses' ? 'bg-indigo-600 text-white font-medium shadow-sm ring-1 ring-white/20' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               With Pauses ({pauses.length})
@@ -158,8 +161,8 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
             {codeSwitchedCount > 0 && (
               <button
                 onClick={() => setFilterType('codeswitch')}
-                className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 cursor-pointer ${
-                  filterType === 'codeswitch' ? 'bg-purple-600 text-white font-medium shadow-sm' : 'text-purple-300 hover:text-white'
+                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                  filterType === 'codeswitch' ? 'bg-purple-600 text-white font-medium shadow-sm ring-1 ring-white/20' : 'text-purple-300 hover:text-white'
                 }`}
               >
                 <Globe className="w-3 h-3" />
@@ -171,13 +174,13 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
       </div>
 
       {/* Visual Gantt-style Timeline Strip */}
-      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+      <div className="p-3.5 bg-slate-950/75 backdrop-blur-xl rounded-xl border border-white/10 space-y-2 z-10 relative">
         <div className="flex items-center justify-between text-[11px] text-slate-400">
-          <span>Acoustic Timeline Distribution</span>
-          <span className="font-mono">Total Duration: {duration.toFixed(2)}s</span>
+          <span className="font-medium text-slate-300">Acoustic Timeline Distribution</span>
+          <span className="font-mono text-cyan-400">Total Duration: {duration.toFixed(2)}s</span>
         </div>
 
-        <div className="relative w-full h-8 bg-slate-900 rounded-lg overflow-hidden flex items-center border border-slate-800">
+        <div className="relative w-full h-8 bg-slate-900/90 rounded-lg overflow-hidden flex items-center border border-white/5">
           {/* Pauses visual bars */}
           {pauses.map((p) => {
             const leftPercent = duration > 0 ? (p.start / duration) * 100 : 0;
@@ -186,7 +189,7 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
               <div
                 key={p.id}
                 onClick={() => onSeekToTime(p.start)}
-                className="absolute top-0 bottom-0 bg-rose-500/30 hover:bg-rose-500/60 cursor-pointer border-r border-rose-500/40 transition-colors z-10"
+                className="absolute top-0 bottom-0 bg-rose-500/30 hover:bg-rose-500/60 cursor-pointer border-r border-rose-500/50 transition-colors z-10"
                 style={{ left: `${leftPercent}%`, width: `${Math.max(1, widthPercent)}%` }}
                 title={`Pause between "${p.prevWord}" and "${p.nextWord}": ${p.duration.toFixed(2)}s`}
               />
@@ -204,10 +207,10 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
                 onClick={() => onSeekToTime(w.start)}
                 className={`absolute top-1 bottom-1 rounded-sm cursor-pointer transition-all ${
                   isActive
-                    ? 'bg-cyan-400 ring-2 ring-cyan-300 z-20'
+                    ? 'bg-cyan-400 ring-2 ring-cyan-300 z-20 shadow-md shadow-cyan-400/50'
                     : w.lang
                     ? 'bg-purple-500/80 hover:bg-purple-400'
-                    : 'bg-indigo-600/70 hover:bg-indigo-500'
+                    : 'bg-indigo-600/80 hover:bg-indigo-500'
                 }`}
                 style={{ left: `${leftPercent}%`, width: `${Math.max(0.5, widthPercent)}%` }}
                 title={`${w.word} (${w.start.toFixed(2)}s - ${w.end.toFixed(2)}s)${w.lang ? ` [${w.lang}]` : ''}`}
@@ -217,16 +220,16 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
 
           {/* Current playhead marker */}
           <div
-            className="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-30 pointer-events-none shadow-sm"
+            className="absolute top-0 bottom-0 w-0.5 bg-cyan-300 z-30 pointer-events-none shadow-[0_0_8px_#38bdf8]"
             style={{ left: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
           />
         </div>
       </div>
 
-      {/* Interactive Word and Pause Table */}
-      <div className="max-h-[340px] overflow-y-auto rounded-xl border border-slate-800/90 bg-slate-950">
+      {/* Interactive Word and Pause Table with Glassmorphism */}
+      <div className="max-h-[340px] overflow-y-auto rounded-xl border border-white/10 bg-slate-950/70 backdrop-blur-xl z-10 relative">
         <table className="w-full text-left text-xs text-slate-300">
-          <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-sm text-slate-400 border-b border-slate-800 font-mono text-[11px] uppercase tracking-wider">
+          <thead className="sticky top-0 bg-slate-900/90 backdrop-blur-md text-slate-300 border-b border-white/10 font-mono text-[11px] uppercase tracking-wider">
             <tr>
               <th className="py-2.5 px-3">#</th>
               <th className="py-2.5 px-3">{t('wordHeader')}</th>
@@ -238,7 +241,7 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
               <th className="py-2.5 px-3 text-right">{t('actionsHeader')}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+          <tbody className="divide-y divide-white/5 font-mono text-[11px]">
             {filteredWords.map((w, index) => {
               const isActive = w.id === activeWordId;
               const isEditing = editingWordId === w.id;
@@ -248,8 +251,8 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
                   key={w.id}
                   className={`transition-colors ${
                     isActive
-                      ? 'bg-cyan-500/15 text-cyan-200 font-bold'
-                      : 'hover:bg-slate-900/60'
+                      ? 'bg-cyan-500/20 text-cyan-200 font-bold'
+                      : 'hover:bg-white/5'
                   }`}
                 >
                   <td className="py-2 px-3 text-slate-500">{index + 1}</td>
@@ -272,7 +275,7 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
                           {w.word}
                         </button>
                         {w.lang && (
-                          <span className="px-1 py-0.2 rounded text-[9px] font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-purple-500/20 text-purple-300 border border-purple-500/40">
                             {w.lang}
                           </span>
                         )}
@@ -355,14 +358,14 @@ export const TimelineVisualizer: React.FC<TimelineVisualizerProps> = ({
                         <>
                           <button
                             onClick={() => onSeekToTime(w.start)}
-                            className="p-1 text-slate-400 hover:text-cyan-300 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                            className="p-1 text-slate-400 hover:text-cyan-300 hover:bg-white/10 rounded transition-colors cursor-pointer"
                             title="Play from this word"
                           >
                             <PlayCircle className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => startEdit(w)}
-                            className="p-1 text-slate-500 hover:text-indigo-300 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                            className="p-1 text-slate-500 hover:text-indigo-300 hover:bg-white/10 rounded transition-colors cursor-pointer"
                             title="Edit word timing"
                           >
                             <Edit3 className="w-3.5 h-3.5" />

@@ -121,6 +121,7 @@ export const TRANSLATIONS: Record<UILanguage, Record<string, string>> = {
     settingsDesc: 'Configure metadata, timestamp formatting, and Apple Music export parameters',
     generalTab: 'General & Metadata',
     stylingTab: 'Visual & Timing Options',
+    themeTab: 'Theme & Glassmorphism',
     trackTitleLabel: 'Track / Song Title',
     authorLabel: 'Author / Agent ID',
     primaryLangLabel: 'Primary TTML Language',
@@ -129,6 +130,17 @@ export const TRANSLATIONS: Record<UILanguage, Record<string, string>> = {
     saveClose: 'Apply & Close',
     uiSettingsTitle: 'UI Language & Display Settings',
     selectUiLang: 'Select Interface Language',
+
+    // Theme Customizer
+    themeCustomizerTitle: 'Glassmorphism & Theme Customizer',
+    themeCustomizerDesc: 'Adjust frosted glass blur intensity, border translucency, background opacity, and global accent palette.',
+    blurIntensityLabel: 'Glass Blur Intensity',
+    borderOpacityLabel: 'Border Translucency & Opacity',
+    glassOpacityLabel: 'Background Glass Density',
+    globalAccentColor: 'Global Accent Palette',
+    customAccentColor: 'Custom Hex Color',
+    previewGlass: 'Live Glassmorphism Preview',
+    resetTheme: 'Reset to Defaults',
   },
   ja: {
     appTitle: 'TTML Subtitle Studio',
@@ -235,6 +247,7 @@ export const TRANSLATIONS: Record<UILanguage, Record<string, string>> = {
     settingsDesc: 'メタデータ、タイムコード形式、Apple Music出力パラメータのカスタマイズ',
     generalTab: '基本設定 ＆ メタデータ',
     stylingTab: '表示 ＆ タイミングオプション',
+    themeTab: 'テーマ ＆ すりガラス質感',
     trackTitleLabel: '楽曲 / トラックタイトル',
     authorLabel: '作成者 / エージェントID',
     primaryLangLabel: '主言語 (TTML xml:lang)',
@@ -243,6 +256,17 @@ export const TRANSLATIONS: Record<UILanguage, Record<string, string>> = {
     saveClose: '適用して閉じる',
     uiSettingsTitle: 'UI表示言語設定',
     selectUiLang: 'インターフェース言語を選択',
+
+    // Theme Customizer
+    themeCustomizerTitle: 'すりガラス＆テーマカスタマイザー',
+    themeCustomizerDesc: 'すりガラスのぼかし強度、枠線透明度、背景濃度、グローバルアクセントカラーを自由に調整できます。',
+    blurIntensityLabel: 'ガラスのぼかし強度',
+    borderOpacityLabel: '枠線の透明度・濃度',
+    glassOpacityLabel: '背景ガラスの濃度',
+    globalAccentColor: 'グローバルアクセントカラー',
+    customAccentColor: 'カスタム色 (Hex)',
+    previewGlass: 'リアルタイム質感プレビュー',
+    resetTheme: 'デフォルトに戻す',
   },
   ar: {
     appTitle: 'استوديو ترجمات TTML',
@@ -349,6 +373,7 @@ export const TRANSLATIONS: Record<UILanguage, Record<string, string>> = {
     settingsDesc: 'تخصيص البيانات الوصفية وتنسيق الطوابع الزمنية وخيارات التصدير',
     generalTab: 'عام والبيانات الوصفية',
     stylingTab: 'خيارات التوقيت والعرض',
+    themeTab: 'السمة والمظهر الزجاجي',
     trackTitleLabel: 'عنوان المقطع / الأغنية',
     authorLabel: 'المؤلف / المعرف',
     primaryLangLabel: 'لغة TTML الأساسية',
@@ -357,6 +382,17 @@ export const TRANSLATIONS: Record<UILanguage, Record<string, string>> = {
     saveClose: 'تطبيق وإغلاق',
     uiSettingsTitle: 'إعدادات لغة الواجهة',
     selectUiLang: 'اختر لغة واجهة التطبيق',
+
+    // Theme Customizer
+    themeCustomizerTitle: 'تخصيص المظهر والتأثير الزجاجي',
+    themeCustomizerDesc: 'ضبط درجة ضبابية الزجاج، وشفافية الحواف، وكثافة الخلفية، ولوحة ألوان التمييز العامة.',
+    blurIntensityLabel: 'شدة ضبابية الزجاج',
+    borderOpacityLabel: 'شفافية وحدود الحواف',
+    glassOpacityLabel: 'كثافة خلفية الزجاج',
+    globalAccentColor: 'لوحة ألوان التمييز العامة',
+    customAccentColor: 'لون مخصص (Hex)',
+    previewGlass: 'معاينة حية للمظهر الزجاجي',
+    resetTheme: 'إعادة ضبط للافتراضي',
   },
   zh: {
     appTitle: 'TTML Subtitle Studio 字幕工坊',
@@ -463,6 +499,7 @@ export const TRANSLATIONS: Record<UILanguage, Record<string, string>> = {
     settingsDesc: '配置元数据属性、时间码格式与 Apple Music 歌词导出规范',
     generalTab: '基础信息与元数据',
     stylingTab: '显示与时间码选项',
+    themeTab: '主题与磨砂质感',
     trackTitleLabel: '曲目 / 音频标题',
     authorLabel: '作者 / Agent ID',
     primaryLangLabel: 'TTML 主语言代码',
@@ -471,6 +508,17 @@ export const TRANSLATIONS: Record<UILanguage, Record<string, string>> = {
     saveClose: '应用并关闭',
     uiSettingsTitle: '界面显示语言设置',
     selectUiLang: '选择界面语言',
+
+    // Theme Customizer
+    themeCustomizerTitle: '磨砂玻璃与全局主题定制',
+    themeCustomizerDesc: '自由调节磨砂模糊强度、边框透光度、背景透明度与全局色彩高亮。',
+    blurIntensityLabel: '磨砂模糊强度 (Blur)',
+    borderOpacityLabel: '边框透光度 (Border Opacity)',
+    glassOpacityLabel: '背景透明度 (Glass Density)',
+    globalAccentColor: '全局色彩高亮预设',
+    customAccentColor: '自定义十六进制颜色 (Hex)',
+    previewGlass: '实时磨砂玻璃质感预览',
+    resetTheme: '恢复默认主题',
   },
 };
 

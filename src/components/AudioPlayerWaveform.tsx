@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, FastForward, Gauge, Activity } from 'lucide-react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Gauge, Sparkles, Music2, Keyboard } from 'lucide-react';
 import { WordTiming, PauseEvent } from '../types';
 import { UILanguage, getTranslation } from '../utils/i18n';
 
@@ -30,15 +30,45 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const isDraggingRef = useRef<boolean>(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [volume, setVolume] = useState(0.9);
   const [isMuted, setIsMuted] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   const t = (key: string) => getTranslation(uiLanguage, key);
 
-  // Sync internal audio element with external currentTime changes (if not playing or seeking)
+  // High-precision RAF synchronization loop to eliminate browser onTimeUpdate clock jitter & drift
   useEffect(() => {
-    if (audioRef.current && Math.abs(audioRef.current.currentTime - currentTime) > 0.3) {
+    if (!isPlaying) {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      return;
+    }
+
+    const syncClock = () => {
+      if (audioRef.current && !audioRef.current.paused && !isDraggingRef.current) {
+        setCurrentTime(audioRef.current.currentTime);
+      }
+      animFrameRef.current = requestAnimationFrame(syncClock);
+    };
+
+    animFrameRef.current = requestAnimationFrame(syncClock);
+
+    return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, [isPlaying, setCurrentTime]);
+
+  // Sync internal audio element when external currentTime seeks (tolerance < 0.06s)
+  useEffect(() => {
+    if (audioRef.current && !isDraggingRef.current && Math.abs(audioRef.current.currentTime - currentTime) > 0.06) {
       audioRef.current.currentTime = currentTime;
     }
   }, [currentTime]);
@@ -47,19 +77,25 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
   useEffect(() => {
     if (!audioRef.current) return;
     if (isPlaying) {
-      audioRef.current.play().catch((err) => {
-        console.warn('Audio playback error:', err);
-        setIsPlaying(false);
-      });
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('Audio playback interrupted or blocked:', err);
+          setIsPlaying(false);
+        });
+      }
     } else {
       audioRef.current.pause();
     }
   }, [isPlaying, setIsPlaying]);
 
-  // Sync playback rate
+  // Sync playback rate with pitch preservation
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.playbackRate = playbackRate;
+      if ('preservesPitch' in audioRef.current) {
+        (audioRef.current as any).preservesPitch = true;
+      }
     }
   }, [playbackRate]);
 
@@ -70,7 +106,42 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
     }
   }, [volume, isMuted]);
 
-  // Draw interactive waveform canvas
+  // Global keyboard shortcuts for fluid media playback control
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when user is typing into input/textarea/select
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+        return;
+      }
+
+      if (e.code === 'Space' || e.code === 'KeyK') {
+        e.preventDefault();
+        setIsPlaying(!isPlaying);
+      } else if (e.code === 'ArrowLeft' || e.code === 'KeyJ') {
+        e.preventDefault();
+        seekRelative(-5);
+      } else if (e.code === 'ArrowRight' || e.code === 'KeyL') {
+        e.preventDefault();
+        seekRelative(5);
+      } else if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        setVolume((v) => Math.min(1, Number((v + 0.1).toFixed(2))));
+        setIsMuted(false);
+      } else if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        setVolume((v) => Math.max(0, Number((v - 0.1).toFixed(2))));
+      } else if (e.code === 'KeyM') {
+        e.preventDefault();
+        setIsMuted((m) => !m);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, currentTime, duration, setIsPlaying]);
+
+  // Draw interactive waveform canvas with frosted aesthetic
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -83,84 +154,135 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
 
     ctx.clearRect(0, 0, width, height);
 
-    // Draw background track
-    ctx.fillStyle = '#0f172a';
+    // Frosted dark background track with gradient
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+    bgGrad.addColorStop(0, '#090d16');
+    bgGrad.addColorStop(1, '#020617');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // Draw pause intervals (amber / rose subtle shading)
+    // Draw pause intervals (glowing rose zones)
     pauses.forEach((p) => {
       const startX = (p.start / effectiveDuration) * width;
       const endX = (p.end / effectiveDuration) * width;
       const pauseWidth = Math.max(2, endX - startX);
 
-      ctx.fillStyle = 'rgba(244, 63, 94, 0.2)';
+      ctx.fillStyle = 'rgba(244, 63, 94, 0.18)';
       ctx.fillRect(startX, 0, pauseWidth, height);
 
-      // Top indicator tick
+      // Top glowing indicator tick
       ctx.fillStyle = '#f43f5e';
-      ctx.fillRect(startX, 0, pauseWidth, 3);
+      ctx.fillRect(startX, 0, pauseWidth, 2.5);
     });
 
-    // Draw word waveform bars
-    const totalBars = 120;
+    // Draw acoustic word waveform bars with smooth audio curves
+    const totalBars = 140;
     const barWidth = width / totalBars;
 
     for (let i = 0; i < totalBars; i++) {
       const barTime = (i / totalBars) * effectiveDuration;
 
-      // Find if this time slice matches any word
+      // Find matching word
       const matchingWord = words.find((w) => barTime >= w.start && barTime <= w.end);
       const isWordActive = matchingWord && activeWordId === matchingWord.id;
+      const isPast = barTime <= currentTime;
 
-      // Generate synthetic rhythmic height based on index & word density
-      let barHeightRatio = 0.2 + (Math.sin(i * 0.45) * 0.15 + Math.cos(i * 0.8) * 0.15);
+      let barHeightRatio = 0.22 + (Math.sin(i * 0.45) * 0.14 + Math.cos(i * 0.82) * 0.14);
       if (matchingWord) {
-        barHeightRatio = Math.min(0.9, barHeightRatio + 0.4);
+        barHeightRatio = Math.min(0.92, barHeightRatio + 0.42);
       } else {
-        barHeightRatio = Math.max(0.08, barHeightRatio * 0.3); // quieter during pauses
+        barHeightRatio = Math.max(0.08, barHeightRatio * 0.28);
       }
 
       const barHeight = height * barHeightRatio;
       const x = i * barWidth;
       const y = (height - barHeight) / 2;
 
-      // Fill color
+      // Fill color with anti-aliased gradient
       if (isWordActive) {
-        ctx.fillStyle = '#38bdf8'; // bright sky blue for active word
+        const activeGrad = ctx.createLinearGradient(0, y, 0, y + barHeight);
+        activeGrad.addColorStop(0, '#38bdf8');
+        activeGrad.addColorStop(1, '#818cf8');
+        ctx.fillStyle = activeGrad;
       } else if (matchingWord) {
-        ctx.fillStyle = '#6366f1'; // indigo for words
+        ctx.fillStyle = isPast ? '#818cf8' : '#4f46e5';
       } else {
-        ctx.fillStyle = '#334155'; // dark slate for pauses/silence
+        ctx.fillStyle = isPast ? '#334155' : '#1e293b';
       }
 
       ctx.beginPath();
-      ctx.roundRect(x + 1, y, Math.max(1, barWidth - 2), barHeight, 2);
+      ctx.roundRect(x + 1, y, Math.max(1.5, barWidth - 1.5), barHeight, 2);
       ctx.fill();
     }
 
-    // Draw Playhead cursor
+    // Draw Playhead cursor line
     const playheadX = (currentTime / effectiveDuration) * width;
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillRect(playheadX - 1.5, 0, 3, height);
+    
+    // Playhead glow
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+    ctx.fillRect(playheadX - 3, 0, 6, height);
 
-    // Playhead handle
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(playheadX - 1, 0, 2, height);
+
+    // Playhead circle
     ctx.beginPath();
-    ctx.arc(playheadX, 6, 5, 0, Math.PI * 2);
+    ctx.arc(playheadX, 5, 4, 0, Math.PI * 2);
     ctx.fillStyle = '#38bdf8';
     ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }, [duration, currentTime, words, pauses, activeWordId]);
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const updateScrubTime = useCallback((clientX: number) => {
     const canvas = canvasRef.current;
     if (!canvas || duration <= 0) return;
     const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
+    const clickX = clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, clickX / rect.width));
     const newTime = ratio * duration;
     setCurrentTime(newTime);
     if (audioRef.current) {
       audioRef.current.currentTime = newTime;
     }
+  }, [duration, setCurrentTime]);
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    isDraggingRef.current = true;
+    updateScrubTime(e.clientX);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (isDraggingRef.current) {
+        updateScrubTime(moveEvent.clientX);
+      }
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length > 0) {
+      isDraggingRef.current = true;
+      updateScrubTime(e.touches[0].clientX);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (isDraggingRef.current && e.touches.length > 0) {
+      updateScrubTime(e.touches[0].clientX);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    isDraggingRef.current = false;
   };
 
   const seekRelative = (delta: number) => {
@@ -180,17 +302,16 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
-      {/* Hidden or managed Audio Element */}
+    <div className="relative overflow-hidden glass-panel rounded-2xl p-5 sm:p-6 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] space-y-4 max-w-full box-border">
+      {/* Ambient background glow */}
+      <div className="absolute -top-24 -right-24 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-24 -left-24 w-60 h-60 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Hidden audio element */}
       {audioUrl && (
         <audio
           ref={audioRef}
           src={audioUrl}
-          onTimeUpdate={() => {
-            if (audioRef.current) {
-              setCurrentTime(audioRef.current.currentTime);
-            }
-          }}
           onEnded={() => {
             setIsPlaying(false);
             setCurrentTime(duration);
@@ -201,68 +322,84 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
         />
       )}
 
-      {/* Waveform Seeker Canvas */}
-      <div className="relative mb-3">
+      {/* Waveform Seeker Canvas with Drag & Click Scrubbing */}
+      <div className="relative mb-3 z-10">
         <canvas
           ref={canvasRef}
           width={800}
-          height={70}
-          onClick={handleCanvasClick}
-          className="w-full h-[70px] rounded-xl cursor-pointer bg-slate-950 border border-slate-800/80 shadow-inner"
+          height={75}
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          className="w-full h-[75px] rounded-xl cursor-ew-resize bg-slate-950/90 border border-white/5 shadow-inner select-none touch-none"
         />
 
         {/* Legend pills over waveform */}
-        <div className="absolute top-2 right-2 flex items-center gap-2 bg-slate-950/80 backdrop-blur-sm px-2.5 py-1 rounded-md border border-slate-800 text-[10px] font-medium pointer-events-none">
+        <div className="absolute top-2 right-2 flex items-center gap-2 bg-slate-950/70 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 text-[10px] font-medium pointer-events-none">
           <span className="flex items-center gap-1 text-indigo-300">
-            <span className="w-2 h-2 rounded-full bg-indigo-500" /> Speech
+            <span className="w-2 h-2 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50" /> Word Sync
           </span>
           <span className="flex items-center gap-1 text-rose-300">
-            <span className="w-2 h-2 rounded-full bg-rose-500" /> Pause ({pauses.length})
+            <span className="w-2 h-2 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50" /> Pause ({pauses.length})
           </span>
         </div>
       </div>
 
       {/* Bottom control row */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+      <div className="flex flex-wrap items-center justify-between gap-4 pt-1 z-10 relative">
         {/* Playback action buttons */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => seekRelative(-5)}
-            className="p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-            title="Rewind 5s"
+            className="p-2 text-slate-300 hover:text-white bg-slate-800/50 hover:bg-slate-700/60 border border-white/5 rounded-xl transition-all cursor-pointer active:scale-95"
+            title="Rewind 5s (Left Arrow / J)"
           >
             <RotateCcw className="w-4 h-4" />
           </button>
 
           <button
             onClick={() => setIsPlaying(!isPlaying)}
-            className="w-10 h-10 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30 transition-colors cursor-pointer"
-            title={isPlaying ? t('pause') : t('play')}
+            className="w-11 h-11 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30 transition-all cursor-pointer active:scale-95 ring-1 ring-white/20"
+            title={isPlaying ? 'Pause (Space / K)' : 'Play (Space / K)'}
           >
             {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
           </button>
 
           <button
             onClick={() => seekRelative(5)}
-            className="p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-            title="Forward 5s"
+            className="p-2 text-slate-300 hover:text-white bg-slate-800/50 hover:bg-slate-700/60 border border-white/5 rounded-xl transition-all cursor-pointer active:scale-95"
+            title="Forward 5s (Right Arrow / L)"
           >
             <RotateCw className="w-4 h-4" />
           </button>
 
-          {/* Timecode display */}
-          <div className="ml-2 font-mono text-xs text-slate-300 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
-            <span className="text-cyan-400 font-bold">{formatTime(currentTime)}</span>
-            <span className="text-slate-600 mx-1">/</span>
-            <span className="text-slate-400">{formatTime(duration)}</span>
+          {/* Timecode display with frosted badge */}
+          <div className="ml-2 font-mono text-xs text-slate-200 bg-slate-950/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 shadow-sm">
+            <span className="text-cyan-400 font-bold tracking-wider">{formatTime(currentTime)}</span>
+            <span className="text-slate-600 mx-1.5">/</span>
+            <span className="text-slate-400 tracking-wider">{formatTime(duration)}</span>
           </div>
         </div>
 
-        {/* Speed & Volume controls */}
-        <div className="flex items-center gap-3">
+        {/* Speed, Volume, and Shortcuts controls */}
+        <div className="flex items-center gap-2.5">
+          {/* Shortcuts Info Toggle */}
+          <button
+            onClick={() => setShowShortcuts(!showShortcuts)}
+            className={`p-1.5 rounded-xl border transition-all cursor-pointer text-xs flex items-center gap-1 ${
+              showShortcuts
+                ? 'bg-indigo-600/90 text-white border-indigo-400/40 shadow-sm'
+                : 'bg-slate-950/80 text-slate-400 hover:text-slate-200 border-white/10'
+            }`}
+            title="Keyboard Shortcuts Guide"
+          >
+            <Keyboard className="w-3.5 h-3.5" />
+          </button>
+
           {/* Speed Selector */}
-          <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
-            <Gauge className="w-3.5 h-3.5 text-slate-400" />
+          <div className="flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 shadow-sm">
+            <Gauge className="w-3.5 h-3.5 text-indigo-400" />
             <select
               value={playbackRate}
               onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
@@ -278,13 +415,13 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
           </div>
 
           {/* Volume slider */}
-          <div className="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+          <div className="flex items-center gap-2 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-xl border border-white/10 shadow-sm">
             <button
               onClick={() => setIsMuted(!isMuted)}
               className="text-slate-400 hover:text-slate-200 cursor-pointer"
-              title={isMuted ? 'Unmute' : 'Mute'}
+              title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
             >
-              {isMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5" />}
+              {isMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
             </button>
             <input
               type="range"
@@ -296,11 +433,24 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
                 setVolume(parseFloat(e.target.value));
                 if (isMuted) setIsMuted(false);
               }}
-              className="w-16 accent-indigo-500 cursor-pointer"
+              className="w-16 accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
             />
           </div>
         </div>
       </div>
+
+      {/* Keyboard shortcuts popup banner */}
+      {showShortcuts && (
+        <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 font-mono">
+          <div className="flex items-center gap-3">
+            <span><kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/10 text-slate-200">Space</kbd> Play/Pause</span>
+            <span><kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/10 text-slate-200">←</kbd> / <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/10 text-slate-200">→</kbd> Seek 5s</span>
+            <span><kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/10 text-slate-200">↑</kbd> / <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/10 text-slate-200">↓</kbd> Volume</span>
+            <span><kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/10 text-slate-200">M</kbd> Mute</span>
+          </div>
+          <span className="text-cyan-400">Drag waveform to scrub smoothly</span>
+        </div>
+      )}
     </div>
   );
 };
