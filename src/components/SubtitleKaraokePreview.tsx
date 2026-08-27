@@ -90,7 +90,7 @@ export const SubtitleKaraokePreview: React.FC<SubtitleKaraokePreviewProps> = ({
 
   return (
     <div
-      className={`relative overflow-hidden glass-panel rounded-2xl p-5 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] flex flex-col space-y-4 max-w-full box-border ${
+      className={`relative overflow-hidden glass-card rounded-2xl p-5 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] flex flex-col space-y-4 max-w-full box-border ${
         is120Hz ? 'high-refresh-120hz' : ''
       }`}
     >
@@ -268,7 +268,7 @@ export const SubtitleKaraokePreview: React.FC<SubtitleKaraokePreviewProps> = ({
                                 ? 'text-slate-200'
                                 : 'text-slate-500'
                               : isWordActive
-                              ? 'drop-shadow-[0_0_12px_rgba(255,255,255,0.6)]'
+                              ? '[text-shadow:0_0_12px_rgba(255,255,255,0.6)]'
                               : ''
                           }`}
                         >
@@ -362,23 +362,23 @@ export const SubtitleKaraokePreview: React.FC<SubtitleKaraokePreviewProps> = ({
                             key={w.id}
                             ref={isWordActive ? activeWordRef : null}
                             onClick={() => onSeekToTime(w.start)}
-                            className={`inline-flex items-center mx-1.5 cursor-pointer transition-all duration-100 px-2.5 py-1 rounded-xl select-none ${
+                            className={`inline cursor-pointer transition-colors duration-150 select-none ${
                               isWordActive
-                                ? 'text-cyan-200 font-bold bg-gradient-to-r from-cyan-500/30 to-indigo-500/30 scale-110 shadow-lg shadow-cyan-500/25 ring-1 ring-cyan-400/80'
+                                ? 'text-cyan-300 font-bold scale-105 drop-shadow-md'
                                 : isWordPast
-                                ? 'text-slate-100 opacity-90'
-                                : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                                ? 'text-slate-100'
+                                : 'text-slate-500 hover:text-slate-300'
                             }`}
                             title={`[${w.start.toFixed(2)}s - ${w.end.toFixed(2)}s] ${w.lang ? `(${w.lang.toUpperCase()}) ` : ''}Pause: ${w.pauseAfter}s - Click to seek`}
                           >
-                            <span className="text-base sm:text-lg tracking-wide">{w.word}</span>
+                            <span className="text-base sm:text-lg tracking-wide">{w.word}&nbsp;</span>
                             {w.lang && w.lang !== config.language && (
-                              <span className="inline-block ml-1.5 text-[8px] px-1.5 py-0.2 rounded bg-indigo-900/90 text-indigo-200 border border-indigo-500/40 align-top uppercase font-mono">
+                              <span className="inline-block ml-0.5 text-[8px] px-1 py-0.2 rounded bg-indigo-900/90 text-indigo-200 border border-indigo-500/40 align-top uppercase font-mono">
                                 {w.lang}
                               </span>
                             )}
                             {w.pauseAfter > 0.25 && (
-                              <span className="inline-block ml-1.5 text-[9px] px-1.5 py-0.2 rounded text-rose-300 bg-rose-950/70 border border-rose-700/50 align-middle">
+                              <span className="inline-block ml-0.5 text-[9px] px-1 py-0.2 rounded text-rose-300 bg-rose-950/70 border border-rose-700/50 align-middle">
                                 {w.pauseAfter.toFixed(2)}s
                               </span>
                             )}
@@ -389,7 +389,7 @@ export const SubtitleKaraokePreview: React.FC<SubtitleKaraokePreviewProps> = ({
                   </div>
                 ) : (
                   /* Dynamic Multi-line Reflow with Proper Word Separation */
-                  <div className="flex flex-wrap justify-center items-center gap-x-2 gap-y-1.5 py-1">
+                  <div className="text-center py-1 leading-relaxed">
                     {currentParagraph.words.map((w: WordTiming) => {
                       const isWordActive = w.id === activeWordId;
                       const isWordPast = currentTime > w.end;
@@ -398,18 +398,18 @@ export const SubtitleKaraokePreview: React.FC<SubtitleKaraokePreviewProps> = ({
                         <span
                           key={w.id}
                           onClick={() => onSeekToTime(w.start)}
-                          className={`inline-flex items-center cursor-pointer transition-all duration-100 px-2 py-0.5 rounded-lg select-none ${
+                          className={`inline cursor-pointer transition-colors duration-100 select-none ${
                             isWordActive
-                              ? 'text-cyan-200 font-bold bg-cyan-500/30 scale-105 shadow-md ring-1 ring-cyan-400/80'
+                              ? 'text-cyan-300 font-bold drop-shadow-md'
                               : isWordPast
                               ? 'text-slate-100'
                               : 'text-slate-500 hover:text-slate-300'
                           }`}
                           title={`[${w.start.toFixed(2)}s - ${w.end.toFixed(2)}s] Click to seek`}
                         >
-                          <span className="text-base sm:text-lg">{w.word}</span>
+                          <span className="text-base sm:text-lg">{w.word}&nbsp;</span>
                           {w.lang && w.lang !== config.language && (
-                            <span className="inline-block ml-1 text-[8px] px-1 py-0 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/50 align-top uppercase font-mono">
+                            <span className="inline-block ml-0.5 text-[8px] px-1 py-0 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/50 align-top uppercase font-mono">
                               {w.lang}
                             </span>
                           )}
@@ -474,25 +474,25 @@ export const SubtitleKaraokePreview: React.FC<SubtitleKaraokePreviewProps> = ({
                     {p.start.toFixed(2)}s - {p.end.toFixed(2)}s
                   </button>
                 </div>
-                <div className="text-sm leading-relaxed flex flex-wrap items-center gap-x-2 gap-y-1">
+                <div className="text-sm leading-relaxed">
                   {p.words.map((w) => {
                     const isWordActive = w.id === activeWordId;
                     return (
                       <span
                         key={w.id}
                         onClick={() => onSeekToTime(w.start)}
-                        className={`inline-flex items-center px-1.5 py-0.5 rounded-lg cursor-pointer transition-all ${
+                        className={`inline cursor-pointer transition-colors ${
                           isWordActive
-                            ? 'bg-cyan-500/30 text-cyan-200 font-bold ring-1 ring-cyan-400/60 shadow-sm'
+                            ? 'text-cyan-300 font-bold drop-shadow-sm'
                             : currentTime > w.end
-                            ? 'text-slate-200 hover:bg-white/5'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                            ? 'text-slate-200'
+                            : 'text-slate-400 hover:text-slate-200'
                         }`}
                         title={`Click to seek (${w.start.toFixed(2)}s)`}
                       >
-                        <span>{w.word}</span>
+                        <span>{w.word}&nbsp;</span>
                         {w.lang && w.lang !== config.language && (
-                          <span className="inline-block ml-1 text-[8px] px-1 py-0 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/50 align-top uppercase font-mono">
+                          <span className="inline-block ml-0.5 text-[8px] px-1 py-0 rounded bg-indigo-900/80 text-indigo-300 border border-indigo-700/50 align-top uppercase font-mono">
                             {w.lang}
                           </span>
                         )}

@@ -17,8 +17,9 @@ export const TimingAnalytics: React.FC<TimingAnalyticsProps> = ({ stats, duratio
     : 80;
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-      {/* Metric 1: Total Words */}
+    <div className="glass-card rounded-2xl p-4 sm:p-5 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] w-full box-border">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* Metric 1: Total Words */}
       <div className="backdrop-blur-xl bg-slate-900/60 border border-white/10 rounded-2xl p-3.5 flex flex-col justify-between shadow-[0_8px_32px_0_rgba(0,0,0,0.3)]">
         <div className="flex items-center justify-between text-slate-400 text-xs">
           <span>{t('totalWordsMetric')}</span>
@@ -91,6 +92,7 @@ export const TimingAnalytics: React.FC<TimingAnalyticsProps> = ({ stats, duratio
           <div className="text-[10px] text-slate-400 mt-0.5">Max silent interval</div>
         </div>
       </div>
+    </div>
     </div>
   );
 };

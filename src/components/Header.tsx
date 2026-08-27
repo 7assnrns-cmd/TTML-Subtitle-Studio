@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FileCode, Sliders, Globe, PlusCircle, Sparkles, Languages, ChevronDown, Info, Zap, Palette } from 'lucide-react';
+import { FileCode, Sliders, Globe, PlusCircle, Sparkles, Languages, ChevronDown, Info, Zap, Palette, History } from 'lucide-react';
 import { SAMPLE_DATASETS } from '../utils/audioSamples';
 import { UILanguage, SUPPORTED_UI_LANGUAGES, getTranslation } from '../utils/i18n';
 
@@ -8,6 +8,7 @@ interface HeaderProps {
   onOpenSettings: () => void;
   onOpenLanguageSettings: () => void;
   onOpenInfo: () => void;
+  onOpenHistory?: () => void;
   hasData?: boolean;
   onReset?: () => void;
   currentLanguage?: string;
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onOpenLanguageSettings,
   onOpenInfo,
+  onOpenHistory,
   hasData = false,
   onReset,
   detectedLanguages,
@@ -168,6 +170,15 @@ export const Header: React.FC<HeaderProps> = ({
             <span>{t('newAudio')}</span>
           </button>
         )}
+
+        <button
+          onClick={onOpenHistory}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800/80 hover:bg-slate-700/80 hover:border-cyan-500/40 border border-white/10 rounded-xl transition-all shadow-sm cursor-pointer backdrop-blur-md"
+          title="Saved Lyrics & Timing History"
+        >
+          <History className="w-3.5 h-3.5 text-cyan-400" />
+          <span>History</span>
+        </button>
 
         <button
           onClick={onOpenSettings}

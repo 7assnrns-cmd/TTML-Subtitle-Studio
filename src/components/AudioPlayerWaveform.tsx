@@ -317,7 +317,7 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
             setCurrentTime(duration);
           }}
           onError={(e) => {
-            console.error('Audio playback error', e);
+            console.error('Audio playback error occurred.');
           }}
         />
       )}

@@ -10,6 +10,11 @@ import {
   Zap,
   Music2,
   Share2,
+  ListFilter,
+  Users,
+  Mic,
+  Clock,
+  Layers,
 } from 'lucide-react';
 import { ParagraphSegment, TTMLConfig } from '../types';
 import { generateTTML, generateSRT, generateVTT, generateLRC, generateEnhancedLRC } from '../utils/ttmlGenerator';
@@ -37,7 +42,7 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ttml' | 'enhanced-lrc' | 'lrc' | 'srt' | 'vtt' | 'json'>('ttml');
+  const [activeTab, setActiveTab] = useState<'ttml' | 'breakdown' | 'enhanced-lrc' | 'lrc' | 'srt' | 'vtt' | 'json'>('ttml');
 
   const t = (key: string) => getTranslation(uiLanguage, key);
 
@@ -58,6 +63,8 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
     switch (activeTab) {
       case 'ttml':
         return ttmlXml;
+      case 'breakdown':
+        return jsonOutput;
       case 'enhanced-lrc':
         return enhancedLrcOutput;
       case 'lrc':
@@ -150,7 +157,7 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
   };
 
   return (
-    <div className="relative overflow-hidden glass-panel rounded-2xl p-4 sm:p-5 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] flex flex-col h-full max-w-full box-border">
+    <div className="relative overflow-hidden glass-card rounded-2xl p-4 sm:p-5 shadow-[0_8px_32px_0_rgba(0,0,0,0.45)] flex flex-col h-full max-w-full box-border">
       {/* Ambient background glow */}
       <div className="absolute top-0 right-1/3 w-80 h-36 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -168,6 +175,17 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
           >
             <Code className="w-3.5 h-3.5" />
             Apple Music TTML
+          </button>
+          <button
+            onClick={() => setActiveTab('breakdown')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === 'breakdown'
+                ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white shadow-sm ring-1 ring-white/20'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ListFilter className="w-3.5 h-3.5 text-cyan-300" />
+            3-List Breakdown
           </button>
           <button
             onClick={() => setActiveTab('enhanced-lrc')}
@@ -346,12 +364,136 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
           </div>
         </div>
 
-        {/* Highlighted Code Display */}
-        <div className="p-4 flex-1 overflow-auto text-xs leading-relaxed text-slate-300 select-text selection:bg-indigo-500 selection:text-white">
-          <pre className="whitespace-pre font-mono">
-            {currentContent}
-          </pre>
-        </div>
+        {/* Highlighted Code or 3-List Breakdown Display */}
+        {activeTab === 'breakdown' ? (
+          <div className="p-4 flex-1 overflow-auto space-y-5 text-xs text-slate-300">
+            {/* List 1: Header Metadata List */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-cyan-400 font-bold uppercase tracking-wider text-[11px] border-b border-cyan-500/20 pb-1">
+                <FileText className="w-3.5 h-3.5" />
+                1. Header Metadata List
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                <div>
+                  <span className="text-slate-500 block text-[10px]">Song Title</span>
+                  <span className="font-semibold text-slate-200">{config.title || baseTitle}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">Author / Artist</span>
+                  <span className="font-semibold text-slate-200">{config.author || 'Artist v1'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">Primary Language</span>
+                  <span className="font-semibold text-cyan-300 uppercase">{config.language || 'JA'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">Duration</span>
+                  <span className="font-semibold text-slate-200">{duration.toFixed(1)}s</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">Time Profile</span>
+                  <span className="font-semibold text-slate-200">{config.profile}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">Time Format</span>
+                  <span className="font-semibold text-slate-200">{config.timeFormat}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">Total Words</span>
+                  <span className="font-semibold text-slate-200">{paragraphs.reduce((acc, p) => acc + p.words.length, 0)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px]">Total Lines</span>
+                  <span className="font-semibold text-slate-200">{paragraphs.length}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* List 2: Vocalist / Agent Attribution List */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-indigo-400 font-bold uppercase tracking-wider text-[11px] border-b border-indigo-500/20 pb-1">
+                <Users className="w-3.5 h-3.5" />
+                2. Vocalist / Agent Attribution List
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5 text-cyan-400" /> Lead Vocalist
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px]">v1</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">Primary vocal track performer</p>
+                </div>
+                <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5 text-purple-400" /> Secondary Vocalist
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-[10px]">v2</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">Duet / Secondary vocals</p>
+                </div>
+                <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5 text-amber-400" /> Background / Harmonies
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px]">v_bg</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">ChORUS / Background vocal layer</p>
+                </div>
+              </div>
+            </div>
+
+            {/* List 3: Synchronized Timed Text List */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold uppercase tracking-wider text-[11px] border-b border-emerald-500/20 pb-1">
+                <Clock className="w-3.5 h-3.5" />
+                3. Synchronized Timed Text List ({paragraphs.length} Lines)
+              </div>
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                {paragraphs.map((p, idx) => (
+                  <div key={p.id || idx} className="p-2.5 bg-slate-900/70 rounded-xl border border-slate-800/80 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="font-mono text-cyan-300 font-medium">
+                        [{p.startTime.toFixed(2)}s &rarr; {p.endTime.toFixed(2)}s]
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-semibold">
+                          {p.part || 'Verse'}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono">
+                          {p.agent || 'v1'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="font-medium text-slate-100 text-xs">
+                      {p.text}
+                    </div>
+                    <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-800/60">
+                      {p.words.map((w) => (
+                        <span
+                          key={w.id}
+                          className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] text-slate-300 flex items-center gap-1"
+                        >
+                          <span className="text-white">{w.text}</span>
+                          <span className="text-slate-500 text-[9px] font-mono">({w.startTime.toFixed(2)}s)</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 flex-1 overflow-auto text-xs leading-relaxed text-slate-300 select-text selection:bg-indigo-500 selection:text-white">
+            <pre className="whitespace-pre font-mono">
+              {currentContent}
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import { TimingAnalytics } from './components/TimingAnalytics';
 import { TTMLSettingsModal } from './components/TTMLSettingsModal';
 import { LanguageSettingsModal } from './components/LanguageSettingsModal';
 import { InfoModal } from './components/InfoModal';
+import { HistoryModal } from './components/HistoryModal';
 import { AudioAnalysisResult, TTMLConfig, WordTiming, ParagraphSegment, PauseEvent } from './types';
 import { SAMPLE_DATASETS, createSyntheticAudioBuffer } from './utils/audioSamples';
 import { calculateTimingStats } from './utils/ttmlGenerator';
@@ -22,6 +23,7 @@ import { optimizeAndChunkAudio, AudioChunk } from './utils/audioOptimizer';
 import { separateGluedWords, recalibrateWordTimestamps } from './utils/wordSplitting';
 import { UILanguage, getTranslation } from './utils/i18n';
 import { loadSavedTheme, applyThemeVariables } from './utils/theme';
+import { saveToHistory, SavedAnalysis } from './utils/storage';
 import { AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
 
 const DEFAULT_CONFIG: TTMLConfig = {
@@ -88,6 +90,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLanguageSettingsOpen, setIsLanguageSettingsOpen] = useState(false);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const timerRef = useRef<any>(null);
 
@@ -147,7 +150,8 @@ export default function App() {
     mimeType: string,
     threshold: number,
     mode: 'auto' | 'manual' = languageMode,
-    targetLang: string = selectedLanguage
+    targetLang: string = selectedLanguage,
+    lyricsText: string = ''
   ) => {
     setIsAnalyzing(true);
     setErrorMessage(null);
@@ -196,6 +200,9 @@ export default function App() {
         if (tempAudio.duration && !isNaN(tempAudio.duration)) {
           setDuration(tempAudio.duration);
         }
+      };
+      tempAudio.onerror = () => {
+        console.warn('Browser failed to load temp audio for duration measurement.');
       };
 
       addLiveLog('Optimizing waveform: resampling to 16kHz mono PCM...');
@@ -265,6 +272,7 @@ export default function App() {
             titleHint: uploadedFilename,
             languageMode: mode,
             selectedLanguage: targetLang,
+            lyricsText,
           }),
         });
 
@@ -542,6 +550,7 @@ export default function App() {
       };
 
       setAnalysisResult(finalResult);
+      saveToHistory(uploadedFilename, finalResult);
       setDuration(totalDurationSec);
       setConfig((prev) => ({
         ...prev,
@@ -564,7 +573,7 @@ export default function App() {
         setIsAnalyzing(false);
       }, 700);
     } catch (err: any) {
-      console.error('[TTML Alignment Error]', err);
+      console.error('[TTML Alignment Error]', err?.message || err);
       const msg = err.message || 'An unexpected error occurred during phonetic analysis.';
       setErrorMessage(msg);
       addLiveLog(`Error: ${msg}`);
@@ -634,6 +643,7 @@ export default function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenInfo={() => setIsInfoOpen(true)}
         onOpenLanguageSettings={() => setIsLanguageSettingsOpen(true)}
+        onOpenHistory={() => setIsHistoryOpen(true)}
         hasData={Boolean(analysisResult)}
         onReset={() => {
           setAnalysisResult(null);
@@ -674,7 +684,8 @@ export default function App() {
                       lastFailedFile.mimeType,
                       pauseThreshold,
                       languageMode,
-                      selectedLanguage
+                      selectedLanguage,
+                      ''
                     )
                   }
                   className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer shadow-sm"
@@ -800,6 +811,21 @@ export default function App() {
       <InfoModal
         isOpen={isInfoOpen}
         onClose={() => setIsInfoOpen(false)}
+      />
+
+      <HistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectHistoryItem={(item) => {
+          setAnalysisResult(item.data);
+          setFilename(item.filename);
+          setDuration(item.data.duration);
+          setConfig((prev) => ({
+            ...prev,
+            title: item.data.title || item.filename,
+          }));
+        }}
+        uiLanguage={uiLanguage}
       />
 
       {/* Footer */}

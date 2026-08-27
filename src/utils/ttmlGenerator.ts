@@ -115,6 +115,7 @@ export function generateTTML(
   });
 
   let xml = `<?xml version="1.0" encoding="utf-8"?>\n`;
+  xml += `<!-- 1. Header Metadata List -->\n`;
   xml += `<tt xmlns="http://www.w3.org/ns/ttml"\n`;
   xml += `    xmlns:ttm="http://www.w3.org/ns/ttml#metadata"\n`;
   xml += `    xmlns:itunes="http://music.apple.com/lyric-ttml-internal"\n`;
@@ -124,6 +125,7 @@ export function generateTTML(
   // Apple Music head metadata with multi-agent definitions
   xml += `  <head>\n`;
   xml += `    <metadata>\n`;
+  xml += `      <!-- 2. Vocalist/Agent Attribution List -->\n`;
   Array.from(agentsMap.values()).forEach((agent) => {
     xml += `      <ttm:agent type="${escapeXml(agent.type || 'person')}" xml:id="${escapeXml(agent.id)}">${escapeXml(agent.name || agent.id)}</ttm:agent>\n`;
   });
@@ -132,7 +134,9 @@ export function generateTTML(
   xml += `  </head>\n`;
 
   // Body with grouped <div> sections
-  xml += `  <body>\n`;
+  const durAttr = metadata?.duration ? ` dur="${formatTimecode(metadata.duration, 'seconds', frameRate)}"` : '';
+  xml += `  <body${durAttr}>\n`;
+  xml += `    <!-- 3. Synchronized Timed Text List -->\n`;
 
   // Group paragraphs into songPart blocks (e.g. Verse, Chorus, Bridge, Outro, Intro)
   interface SongPartGroup {
@@ -168,8 +172,8 @@ export function generateTTML(
     xml += `    <div itunes:songPart="${escapeXml(group.songPart)}">\n`;
 
     group.paras.forEach((para) => {
-      const pBegin = formatTimecode(para.start, timeFormat, frameRate);
-      const pEnd = formatTimecode(para.end, timeFormat, frameRate);
+      const pBegin = formatTimecode(para.start, 'seconds', frameRate);
+      const pEnd = formatTimecode(para.end, 'seconds', frameRate);
       const lineKey = `L${lineCounter++}`;
 
       const isBg = Boolean(para.isBackground || para.role === 'harmony' || para.role === 'background');
@@ -182,11 +186,11 @@ export function generateTTML(
 
       const pRoleAttr = isBg ? ` ttm:role="x-bg"` : '';
 
-      xml += `      <p begin="${pBegin}" end="${pEnd}" itunes:key="${lineKey}" ttm:agent="${escapeXml(paraAgentId)}"${pRoleAttr}${pLangAttr}>\n`;
+      xml += `      <p begin="${pBegin}" end="${pEnd}" itunes:key="${lineKey}" ttm:agent="${escapeXml(paraAgentId)}"${pRoleAttr}${pLangAttr} xml:space="preserve">`;
 
       para.words.forEach((w: WordTiming, wIdx: number) => {
-        const wBegin = formatTimecode(w.start, timeFormat, frameRate);
-        const wEnd = formatTimecode(w.end, timeFormat, frameRate);
+        const wBegin = formatTimecode(w.start, 'seconds', frameRate);
+        const wEnd = formatTimecode(w.end, 'seconds', frameRate);
 
         const wLangAttr =
           emitPerWordLang && w.lang && w.lang !== para.lang && w.lang !== language
@@ -200,13 +204,13 @@ export function generateTTML(
 
         const cleanWord = w.word.trim();
         const isLastWord = wIdx === para.words.length - 1;
-        // Non-final words include trailing space inside the span so words are never glued
+        // Non-final words include trailing space inside the span
         const trailingSpace = isLastWord ? '' : ' ';
 
-        xml += `        <span begin="${wBegin}" end="${wEnd}"${wAgentAttr}${wLangAttr}>${escapeXml(cleanWord)}${trailingSpace}</span>\n`;
+        xml += `<span begin="${wBegin}" end="${wEnd}"${wAgentAttr}${wLangAttr}>${escapeXml(cleanWord)}${trailingSpace}</span>`;
       });
 
-      xml += `      </p>\n`;
+      xml += `</p>\n`;
     });
 
     xml += `    </div>\n`;

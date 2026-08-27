@@ -14,10 +14,13 @@ import {
   X,
   Zap,
   Cpu,
+  Search,
+  Youtube,
 } from 'lucide-react';
 import { SAMPLE_DATASETS } from '../utils/audioSamples';
 import { POPULAR_LANGUAGES } from '../utils/languages';
 import { UILanguage, getTranslation } from '../utils/i18n';
+import { searchYouTubeMusic, importYouTubeTrack, YouTubeTrackResult } from '../services/youtubeMusic';
 
 interface AudioUploaderProps {
   onAnalyzeAudio: (
@@ -26,7 +29,8 @@ interface AudioUploaderProps {
     mimeType: string,
     pauseThreshold: number,
     languageMode: 'auto' | 'manual',
-    selectedLanguage: string
+    selectedLanguage: string,
+    lyricsText?: string
   ) => Promise<void>;
   onSelectSample: (sampleId: string) => void;
   isAnalyzing: boolean;
@@ -61,6 +65,13 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Input Mode: 'local' (File / Mic) vs 'youtube' (YouTube Music URL or Search)
+  const [inputMode, setInputMode] = useState<'local' | 'youtube'>('local');
+  const [ytQuery, setYtQuery] = useState('');
+  const [ytResults, setYtResults] = useState<YouTubeTrackResult[]>([]);
+  const [isSearchingYt, setIsSearchingYt] = useState(false);
+  const [importingYtId, setImportingYtId] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -68,6 +79,8 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
 
   const t = (key: string) => getTranslation(uiLanguage, key);
 
+  const [lyricsText, setLyricsText] = useState<string>('');
+  
   // Clean up recording timer on unmount
   useEffect(() => {
     return () => {
@@ -75,25 +88,40 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
     };
   }, []);
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     setUploadError(null);
-    const validMimes = [
-      'audio/mp3',
-      'audio/mpeg',
-      'audio/wav',
-      'audio/x-wav',
-      'audio/m4a',
-      'audio/x-m4a',
-      'audio/mp4',
-      'audio/aac',
-      'audio/ogg',
-      'audio/webm',
-      'audio/flac',
+    const audioMimes = [
+      'audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/m4a', 'audio/x-m4a',
+      'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/webm', 'audio/flac'
     ];
-    const hasValidExt = /\.(mp3|wav|m4a|aac|ogg|webm|flac)$/i.test(file.name);
+    const textMimes = ['text/plain', 'text/lrc'];
+    const hasAudioExt = /\.(mp3|wav|m4a|aac|ogg|webm|flac)$/i.test(file.name);
+    const hasTextExt = /\.(txt|lrc)$/i.test(file.name);
 
-    if (!validMimes.includes(file.type) && !hasValidExt) {
-      setUploadError('Please select a supported audio format (MP3, WAV, M4A, OGG, AAC, FLAC, or WebM).');
+    if (textMimes.includes(file.type) || hasTextExt) {
+      // Safely read text file
+      try {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const text = e.target?.result;
+          if (typeof text === 'string') {
+            setLyricsText(text);
+            setUploadError(null);
+          }
+        };
+        reader.onerror = () => {
+          setUploadError('Failed to read text file encoding.');
+        };
+        reader.readAsText(file, 'utf-8');
+      } catch (err: any) {
+        console.error('File read error:', err?.message || 'Unknown error');
+        setUploadError('Error parsing reference file.');
+      }
+      return;
+    }
+
+    if (!audioMimes.includes(file.type) && !hasAudioExt) {
+      setUploadError('Please select a supported audio format or a TXT/LRC lyrics file.');
       return;
     }
 
@@ -102,7 +130,9 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
       return;
     }
 
-    onAnalyzeAudio(file, file.name, file.type || 'audio/mp3', pauseThreshold, languageMode, selectedLanguage);
+    const currentLyrics = lyricsText || '';
+    setLyricsText(''); // Reset after use
+    onAnalyzeAudio(file, file.name, file.type || 'audio/mp3', pauseThreshold, languageMode, selectedLanguage, currentLyrics);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -110,6 +140,40 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleYtSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!ytQuery.trim()) return;
+    setIsSearchingYt(true);
+    setUploadError(null);
+    try {
+      const results = await searchYouTubeMusic(ytQuery);
+      setYtResults(results);
+    } catch (err: any) {
+      setUploadError('Failed to search YouTube Music. Please check your query.');
+    } finally {
+      setIsSearchingYt(false);
+    }
+  };
+
+  const handleSelectYtTrack = async (track: YouTubeTrackResult) => {
+    setImportingYtId(track.id);
+    setUploadError(null);
+    try {
+      const imported = await importYouTubeTrack(track.url);
+      onAnalyzeAudio(
+        imported.file,
+        `${track.title.replace(/[^a-zA-Z0-9]/g, '_')}.mp3`,
+        imported.mime,
+        pauseThreshold,
+        languageMode,
+        selectedLanguage
+      );
+    } catch (err: any) {
+      setUploadError('Failed to import YouTube audio stream.');
+      setImportingYtId(null);
     }
   };
 
@@ -349,125 +413,239 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5 z-10 relative">
-          {/* Drag & Drop Box */}
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`lg:col-span-2 relative cursor-pointer border-2 border-dashed rounded-2xl p-6 sm:p-7 flex flex-col items-center justify-center text-center transition-all backdrop-blur-md ${
-              isDragging
-                ? 'border-cyan-400 bg-cyan-500/15 scale-[0.99]'
-                : 'border-white/15 hover:border-cyan-400/60 bg-slate-950/50 hover:bg-slate-950/80'
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm"
-              onChange={(e) => {
-                if (e.target.files && e.target.files.length > 0) {
-                  handleFile(e.target.files[0]);
-                }
-              }}
-              className="hidden"
-            />
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center mb-3 shadow-inner bg-cyan-500/10 border border-cyan-500/25 text-cyan-400">
-              <UploadCloud className="w-6 h-6 sm:w-7 sm:h-7" />
-            </div>
-            <p className="text-sm sm:text-base font-semibold text-slate-200">
-              {t('dropzoneTitle')}{' '}
-              <span className="text-cyan-400 underline decoration-cyan-400/50 underline-offset-4 font-bold">
-                {t('browseFiles')}
-              </span>
-            </p>
-            <p className="text-xs text-slate-400 mt-1.5 max-w-sm">
-              {t('dropzoneDesc')}
-            </p>
+        <div className="space-y-4 z-10 relative">
+          {/* Input Mode Selector Tab Bar */}
+          <div className="flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-1.5 rounded-xl border border-white/10 max-w-md mx-auto">
+            <button
+              onClick={() => setInputMode('local')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg font-semibold text-xs transition-all cursor-pointer ${
+                inputMode === 'local'
+                  ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-indigo-600/30 ring-1 ring-white/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <UploadCloud className="w-4 h-4" />
+              Local File &amp; Recording
+            </button>
+            <button
+              onClick={() => setInputMode('youtube')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg font-semibold text-xs transition-all cursor-pointer ${
+                inputMode === 'youtube'
+                  ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-600/30 ring-1 ring-white/20'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Youtube className="w-4 h-4 text-red-400 group-hover:text-white" />
+              YouTube Music Cloud
+            </button>
           </div>
 
-          {/* Right Column: Live Mic & Multilingual Preset Demo Buttons */}
-          <div className="flex flex-col justify-between gap-3 sm:gap-4">
-            {/* Live Mic Recording */}
-            <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950/75 backdrop-blur-xl border border-white/10 flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                  <Mic className="w-4 h-4 text-rose-400" />
-                  {t('liveVoiceRecording')}
-                </span>
-                {isRecording && (
-                  <span className="flex items-center gap-1.5 text-xs text-rose-400 font-mono font-bold animate-pulse">
-                    <span className="w-2 h-2 rounded-full bg-rose-500" />
-                    {formatTimer(recordSeconds)}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-400 mb-3">
-                {t('liveVoiceDesc')}
-              </p>
-
-              {isRecording ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={stopRecording}
-                    className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/30 transition-colors cursor-pointer"
-                  >
-                    <Square className="w-3.5 h-3.5 fill-current" />
-                    {t('stopAndAnalyze')}
-                  </button>
-                  <button
-                    onClick={cancelRecording}
-                    className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs transition-colors cursor-pointer border border-white/10"
-                    title="Cancel recording"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+          {inputMode === 'local' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5 z-10 relative">
+              {/* Drag & Drop Box */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`lg:col-span-2 relative cursor-pointer border-2 border-dashed rounded-2xl p-6 sm:p-7 flex flex-col items-center justify-center text-center transition-all backdrop-blur-md ${
+                  isDragging
+                    ? 'border-cyan-400 bg-cyan-500/15 scale-[0.99]'
+                    : 'border-white/15 hover:border-cyan-400/60 bg-slate-950/50 hover:bg-slate-950/80'
+                }`}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      handleFile(e.target.files[0]);
+                    }
+                  }}
+                  className="hidden"
+                />
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center mb-3 shadow-inner bg-cyan-500/10 border border-cyan-500/25 text-cyan-400">
+                  <UploadCloud className="w-6 h-6 sm:w-7 sm:h-7" />
                 </div>
-              ) : (
+                <p className="text-sm sm:text-base font-semibold text-slate-200">
+                  {t('dropzoneTitle')}{' '}
+                  <span className="text-cyan-400 underline decoration-cyan-400/50 underline-offset-4 font-bold">
+                    {t('browseFiles')}
+                  </span>
+                </p>
+                <p className="text-xs text-slate-400 mt-1.5 max-w-sm">
+                  {t('dropzoneDesc')}
+                </p>
+              </div>
+
+              {/* Right Column: Live Mic & Multilingual Preset Demo Buttons */}
+              <div className="flex flex-col justify-between gap-3 sm:gap-4">
+                {/* Live Mic Recording */}
+                <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950/75 backdrop-blur-xl border border-white/10 flex flex-col justify-between">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Mic className="w-4 h-4 text-rose-400" />
+                      {t('liveVoiceRecording')}
+                    </span>
+                    {isRecording && (
+                      <span className="flex items-center gap-1.5 text-xs text-rose-400 font-mono font-bold animate-pulse">
+                        <span className="w-2 h-2 rounded-full bg-rose-500" />
+                        {formatTimer(recordSeconds)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 mb-3">
+                    {t('liveVoiceDesc')}
+                  </p>
+
+                  {isRecording ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={stopRecording}
+                        className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/30 transition-colors cursor-pointer"
+                      >
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        {t('stopAndAnalyze')}
+                      </button>
+                      <button
+                        onClick={cancelRecording}
+                        className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs transition-colors cursor-pointer border border-white/10"
+                        title="Cancel recording"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={startRecording}
+                      className="w-full py-2 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center justify-center gap-2 border border-white/10 transition-colors cursor-pointer backdrop-blur-md"
+                    >
+                      <Mic className="w-3.5 h-3.5 text-rose-400" />
+                      {t('startRecording')}
+                    </button>
+                  )}
+                </div>
+
+                {/* Multilingual Sample Demos */}
+                <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950/75 backdrop-blur-xl border border-white/10">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      {t('instantDemos')}
+                    </span>
+                    <span className="text-[10px] text-cyan-300 font-semibold bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20 font-mono">
+                      {t('instantTestBadge')}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {SAMPLE_DATASETS.map((sample) => (
+                      <button
+                        key={sample.id}
+                        onClick={() => onSelectSample(sample.id)}
+                        className="p-2 text-left rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/5 hover:border-cyan-500/40 text-xs text-slate-200 transition-all group cursor-pointer"
+                      >
+                        <div className="font-semibold text-slate-200 group-hover:text-cyan-300 truncate text-[11px]">
+                          {sample.category}
+                        </div>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                          <Music className="w-2.5 h-2.5 text-cyan-400" />
+                          {sample.duration}s
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* YouTube Music Cloud Search & URL Import Interface */
+            <div className="p-6 sm:p-8 bg-slate-950/80 backdrop-blur-2xl border border-red-500/30 rounded-2xl shadow-2xl space-y-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-400 shadow-lg">
+                  <Youtube className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-100">
+                    YouTube Music Cloud Stream &amp; Search
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Paste any YouTube video URL or search by song title &amp; artist to instantly sync lyrics without local file storage.
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleYtSearch} className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={ytQuery}
+                    onChange={(e) => setYtQuery(e.target.value)}
+                    placeholder="Enter song name, artist, or paste YouTube link (e.g. https://youtube.com/watch?v=...)"
+                    className="w-full bg-slate-900/90 border border-white/15 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-slate-100 focus:outline-none focus:border-red-500 shadow-inner"
+                  />
+                </div>
                 <button
-                  onClick={startRecording}
-                  className="w-full py-2 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center justify-center gap-2 border border-white/10 transition-colors cursor-pointer backdrop-blur-md"
+                  type="submit"
+                  disabled={isSearchingYt || !ytQuery.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-semibold text-xs flex items-center gap-2 shadow-lg shadow-red-600/30 disabled:opacity-50 cursor-pointer transition-all"
                 >
-                  <Mic className="w-3.5 h-3.5 text-rose-400" />
-                  {t('startRecording')}
+                  {isSearchingYt ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                  Search Cloud
                 </button>
+              </form>
+
+              {/* YouTube Search Results List */}
+              {ytResults.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <div className="text-xs font-semibold text-slate-300">Search Results &amp; Direct Cloud Streams:</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
+                    {ytResults.map((track) => (
+                      <div
+                        key={track.id}
+                        className="p-3 rounded-xl bg-slate-900/90 border border-white/10 hover:border-red-500/50 flex items-center justify-between gap-3 transition-all group"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={track.thumbnail}
+                            alt={track.title}
+                            className="w-12 h-12 rounded-lg object-cover shrink-0 border border-white/10"
+                          />
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-slate-100 truncate group-hover:text-red-400">
+                              {track.title}
+                            </div>
+                            <div className="text-[11px] text-slate-400 truncate">{track.artist} &bull; {track.duration}</div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleSelectYtTrack(track)}
+                          disabled={importingYtId === track.id}
+                          className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-semibold shrink-0 flex items-center gap-1.5 shadow-md shadow-red-600/30 cursor-pointer disabled:opacity-50"
+                        >
+                          {importingYtId === track.id ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Importing...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5" />
+                              Sync Lyrics
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
-
-            {/* Multilingual Sample Demos */}
-            <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950/75 backdrop-blur-xl border border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  {t('instantDemos')}
-                </span>
-                <span className="text-[10px] text-cyan-300 font-semibold bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20 font-mono">
-                  {t('instantTestBadge')}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {SAMPLE_DATASETS.map((sample) => (
-                  <button
-                    key={sample.id}
-                    onClick={() => onSelectSample(sample.id)}
-                    className="p-2 text-left rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-white/5 hover:border-cyan-500/40 text-xs text-slate-200 transition-all group cursor-pointer"
-                  >
-                    <div className="font-semibold text-slate-200 group-hover:text-cyan-300 truncate text-[11px]">
-                      {sample.category}
-                    </div>
-                    <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                      <Music className="w-2.5 h-2.5 text-cyan-400" />
-                      {sample.duration}s
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>
