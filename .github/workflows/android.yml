@@ -2,25 +2,78 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
-
+    name: Android Gradle Validation
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: set up JDK 11
-      uses: actions/setup-java@v4
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-        cache: gradle
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-    - name: Build with Gradle
-      run: ./gradlew build
+      - name: Ensure Package Lock File Exists
+        run: |
+          echo "=== Checking Package Lock File ==="
+          if [ ! -f package-lock.json ]; then
+            echo "::warning title=Lock File Missing::package-lock.json not found. Generating lockfile..."
+            npm install --package-lock-only || echo "Warning: Failed to generate lockfile."
+          else
+            echo "package-lock.json verified."
+          fi
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Install Dependencies
+        run: |
+          echo "=== Installing Dependencies ==="
+          if [ -f package-lock.json ]; then
+            npm install || (echo "npm install failed, falling back to npm ci..." && npm ci)
+          else
+            npm install
+          fi
+
+      - name: Build Web Application
+        run: |
+          echo "=== Building Web Application ==="
+          npm run build || { echo "::error::Web application compilation failed!"; exit 1; }
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Sync Capacitor Android Project
+        run: |
+          echo "=== Syncing Capacitor Android ==="
+          npx cap sync android || { echo "::error::Capacitor sync failed!"; exit 1; }
+
+      - name: Set Permissions for Gradle Wrapper
+        run: |
+          echo "=== Setting Permissions for Gradle Wrapper ==="
+          if [ -f android/gradlew ]; then
+            chmod +x android/gradlew
+          elif [ -f gradlew ]; then
+            chmod +x gradlew
+          else
+            echo "::error::Gradle wrapper not found!"
+            exit 1
+          fi
+
+      - name: Build with Gradle
+        working-directory: ./android
+        run: |
+          echo "=== Running Gradle Build Validation ==="
+          ./gradlew build --stacktrace || { echo "::error::Gradle build failed!"; exit 1; }
+
