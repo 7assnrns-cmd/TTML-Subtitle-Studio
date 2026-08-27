@@ -268,10 +268,12 @@ ${languageDirective}
 ${contextHint ? `\nContext note: ${contextHint}` : ''}`;
 
     // Recommended production models for audio transcription and acoustic analysis
-    // gemini-3.5-transcribe is specialized for audio; gemini-3.1-flash-lite and gemini-3.7-flash provide fast fallbacks
-    const candidateModels = ['gemini-3.5-transcribe', 'gemini-3.1-flash-lite', 'gemini-3.7-flash'];
+    // gemini-3.7-flash and gemini-3.1-flash-lite provide native multimodal audio support with structured JSON schemas
+    const candidateModels = ['gemini-3.7-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.5-transcribe'];
     let lastError: any = null;
     let responseText = '';
+
+    const sysInstruction = 'You are an acoustic alignment engine that transcribes multilingual songs and speech, calculating exact word-level start/end timestamps and Apple Music song parts (Verse/Chorus) for TTML subtitles. NEVER clump words into sentence blocks. Every word must have separate begin and end micro-timestamps. Output strict JSON.';
 
     for (const modelName of candidateModels) {
       let attempts = 0;
@@ -281,6 +283,22 @@ ${contextHint ? `\nContext note: ${contextHint}` : ''}`;
         try {
           attempts++;
           console.log(`[TTML Backend] Running acoustic alignment with ${modelName} (attempt ${attempts}/${maxAttempts})...`);
+
+          const configObj: any = {
+            responseMimeType: 'application/json',
+            responseSchema,
+            maxOutputTokens: 8192,
+            temperature: 0.1,
+          };
+
+          // Omit systemInstruction for transcribe-specific models where developer instructions are not enabled
+          if (!modelName.includes('transcribe')) {
+            configObj.systemInstruction = sysInstruction;
+          }
+
+          const userPromptText = modelName.includes('transcribe')
+            ? `${sysInstruction}\n\n${prompt}`
+            : prompt;
 
           const response = await ai.models.generateContent({
             model: modelName,
@@ -293,18 +311,11 @@ ${contextHint ? `\nContext note: ${contextHint}` : ''}`;
                   },
                 },
                 {
-                  text: prompt,
+                  text: userPromptText,
                 },
               ],
             },
-            config: {
-              systemInstruction:
-                'You are an acoustic alignment engine that transcribes multilingual songs and speech, calculating exact word-level start/end timestamps and Apple Music song parts (Verse/Chorus) for TTML subtitles. NEVER clump words into sentence blocks. Every word must have separate begin and end micro-timestamps. Output strict JSON.',
-              responseMimeType: 'application/json',
-              responseSchema,
-              maxOutputTokens: 8192,
-              temperature: 0.1,
-            },
+            config: configObj,
           });
 
           if (response && response.text) {
@@ -322,6 +333,14 @@ ${contextHint ? `\nContext note: ${contextHint}` : ''}`;
             errMsg.includes('404') ||
             errMsg.includes('NOT_FOUND') ||
             errMsg.includes('no longer available');
+
+          const isInvalidArgument400 =
+            err.status === 400 ||
+            err.code === 400 ||
+            errMsg.includes('400') ||
+            errMsg.includes('INVALID_ARGUMENT') ||
+            errMsg.includes('Developer instruction') ||
+            errMsg.includes('not enabled');
 
           const isQuotaExhausted =
             err.status === 429 ||
@@ -341,8 +360,8 @@ ${contextHint ? `\nContext note: ${contextHint}` : ''}`;
 
           console.warn(`[TTML Backend] Model ${modelName} attempt ${attempts} encountered: ${errMsg.substring(0, 150)}`);
 
-          if (isNotFound404) {
-            // Model not found or deprecated, immediately failover to next model
+          if (isNotFound404 || isInvalidArgument400) {
+            // Model not found or incompatible argument configuration, immediately failover to next model
             break;
           } else if (isQuotaExhausted) {
             // Quota reached on this model, failover to next model
