@@ -72,17 +72,85 @@ const DEFAULT_CONFIG: TTMLConfig = {
 const PROD_API_URL = 'https://ais-pre-xzlo5557dhnd2jwtdxkun6-567533425465.europe-west2.run.app';
 
 const getApiBaseUrl = () => {
-  const envUrl = (import.meta as any).env.VITE_API_URL;
-  if (envUrl) return envUrl;
-  
   if (Capacitor.isNativePlatform()) {
-    return PROD_API_URL;
+    const envUrl = (import.meta as any).env.VITE_API_URL;
+    return envUrl || PROD_API_URL;
   }
   
   return window.location.origin;
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+async function safeFetch(
+  requestName: string,
+  url: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const method = options.method || 'GET';
+  
+  // Trace the actual request (Requirement 1)
+  console.log(`[API] request=${requestName}`);
+  console.log(`[API] url=${url}`);
+  console.log(`[API] method=${method}`);
+
+  try {
+    const response = await fetch(url, options);
+    
+    if (!response.ok) {
+      let errorDetails = '';
+      try {
+        errorDetails = await response.text();
+      } catch (_) {}
+
+      let errorType = 'HTTP_ERROR';
+      if (response.status === 400) errorType = 'HTTP_400';
+      else if (response.status === 401) errorType = 'HTTP_401';
+      else if (response.status === 403) errorType = 'HTTP_403';
+      else if (response.status === 404) errorType = 'HTTP_404';
+      else if (response.status === 413) errorType = 'HTTP_413';
+      else if (response.status === 429) errorType = 'HTTP_429';
+      else if (response.status >= 500) errorType = 'HTTP_500';
+
+      const err: any = new Error(`Request failed with status ${response.status}: ${errorDetails || response.statusText}`);
+      err.status = response.status;
+      err.errorType = errorType;
+      err.details = errorDetails;
+      throw err;
+    }
+
+    return response;
+  } catch (err: any) {
+    if (err.errorType) {
+      throw err;
+    }
+
+    const isAbort = err.name === 'AbortError' || err.message?.includes('timeout') || err.message?.includes('aborted');
+    let errorType = 'NETWORK_ERROR';
+    let detailedMsg = err.message || 'Unknown network error';
+
+    if (isAbort) {
+      errorType = 'TIMEOUT';
+      detailedMsg = 'The request timed out. Please check your network connection stability.';
+    } else {
+      console.error(`[API Network/CORS/Preflight Error] request=${requestName} url=${url} error=`, err);
+      if (navigator && !navigator.onLine) {
+        errorType = 'OFFLINE';
+        detailedMsg = 'No internet connection detected. Please verify your device settings.';
+      } else {
+        errorType = 'CORS_OR_NETWORK_ERROR';
+        detailedMsg = `Failed to connect to the backend server. This may be due to a CORS policy restriction, a DNS failure, or the backend service being offline. (Requested: ${url})`;
+      }
+    }
+
+    const networkErr: any = new Error(detailedMsg);
+    networkErr.errorType = errorType;
+    networkErr.originalError = err;
+    networkErr.url = url;
+    networkErr.method = method;
+    throw networkErr;
+  }
+}
 
 const INITIAL_LIVE_STATE: LiveAnalysisState = {
   isActive: false,
@@ -110,6 +178,31 @@ export default function App() {
       await AndroidService.getDeviceSpecs();
     };
     initApp();
+  }, []);
+
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'failed'>('checking');
+
+  // Check backend connectivity on startup
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const response = await safeFetch('Health Check', `${API_BASE_URL}/api/health`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+        });
+        if (response.ok) {
+          setBackendStatus('connected');
+          console.log('[Backend Connection] Status: Connected');
+        } else {
+          setBackendStatus('failed');
+          console.error('[Backend Connection] Status: Failed response code', response.status);
+        }
+      } catch (err) {
+        setBackendStatus('failed');
+        console.error('[Backend Connection] Status: Failed with exception', err);
+      }
+    };
+    checkConnection();
   }, []);
 
   const [uiLanguage, setUiLanguage] = useState<UILanguage>('en');
@@ -365,7 +458,7 @@ export default function App() {
         let chunkData: any = null;
 
         try {
-          const response = await fetch(`${API_BASE_URL}/api/analyze-chunk`, {
+          const response = await safeFetch('Analyze Chunk', `${API_BASE_URL}/api/analyze-chunk`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             signal: controller.signal,
@@ -391,23 +484,13 @@ export default function App() {
             chunkData = rawText ? JSON.parse(rawText) : {};
           } catch (parseErr) {
             console.error(`[Chunk Parse Failure] Raw response for Chunk ${index + 1}:`, rawText);
-            if (!response.ok) {
-              throw new Error(`Chunk ${index + 1} analysis failed (HTTP ${response.status}): ${rawText.substring(0, 100)}`);
-            }
             throw new Error(`Unable to parse response from server for Chunk ${index + 1}. Check console for raw text.`);
-          }
-
-          if (!response.ok) {
-            throw new Error(chunkData.error || `Chunk ${index + 1} analysis failed (HTTP ${response.status})`);
           }
 
           chunkResults[index] = chunkData;
           completedChunksCount++;
         } catch (err: any) {
           clearTimeout(timeoutId);
-          if (err.name === 'AbortError') {
-            throw new Error(`Chunk ${index + 1} analysis timed out. Please check your network stability.`);
-          }
           throw err;
         }
 
@@ -803,6 +886,7 @@ export default function App() {
         isCodeSwitched={analysisResult?.isCodeSwitched}
         detectedLanguages={analysisResult?.detectedLanguages}
         primaryLanguage={analysisResult?.language}
+        backendStatus={backendStatus}
       />
 
       <NavigationDock

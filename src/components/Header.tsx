@@ -17,6 +17,7 @@ interface HeaderProps {
   uiLanguage: UILanguage;
   setUiLanguage?: (lang: UILanguage) => void;
   onSelectUILanguage?: (lang: UILanguage) => void;
+  backendStatus?: 'checking' | 'connected' | 'failed';
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   uiLanguage,
   setUiLanguage,
   onSelectUILanguage,
+  backendStatus = 'checking',
 }) => {
   const t = (key: string) => getTranslation(uiLanguage, key);
 
@@ -51,6 +53,27 @@ export const Header: React.FC<HeaderProps> = ({
               <Zap className="w-2.5 h-2.5 text-cyan-400" />
               Cloud AI Studio
             </span>
+            {backendStatus === 'checking' && (
+              <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-blue-500/15 text-blue-300 border border-blue-500/30 rounded-full flex items-center gap-1.5 backdrop-blur-md">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
+                Backend: Connecting...
+              </span>
+            )}
+            {backendStatus === 'connected' && (
+              <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded-full flex items-center gap-1.5 backdrop-blur-md">
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                </span>
+                Backend: Connected
+              </span>
+            )}
+            {backendStatus === 'failed' && (
+              <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-300 border border-rose-500/30 rounded-full flex items-center gap-1.5 backdrop-blur-md animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                Backend: Offline
+              </span>
+            )}
             {isCodeSwitched && (
               <span className="px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full flex items-center gap-1 backdrop-blur-md">
                 <Globe className="w-3 h-3" />
