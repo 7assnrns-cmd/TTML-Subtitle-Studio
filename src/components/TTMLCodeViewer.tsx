@@ -20,6 +20,7 @@ import { ParagraphSegment, TTMLConfig } from '../types';
 import { generateTTML, generateSRT, generateVTT, generateLRC, generateEnhancedLRC } from '../utils/ttmlGenerator';
 import { copyToClipboard } from '../utils/clipboard';
 import { UILanguage, getTranslation } from '../utils/i18n';
+import { CustomSelect } from './CustomSelect';
 
 interface TTMLCodeViewerProps {
   paragraphs: ParagraphSegment[];
@@ -42,7 +43,7 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ttml' | 'breakdown' | 'enhanced-lrc' | 'lrc' | 'srt' | 'vtt' | 'json'>('ttml');
+  const [activeTab, setActiveTab] = useState<'ttml' | 'breakdown'>('ttml');
 
   const t = (key: string) => getTranslation(uiLanguage, key);
 
@@ -53,10 +54,6 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
   });
 
   const baseTitle = filename.replace(/\.[^/.]+$/, '').replace(/[_\\-]/g, ' ');
-  const lrcOutput = generateLRC(paragraphs, { title: baseTitle, duration });
-  const enhancedLrcOutput = generateEnhancedLRC(paragraphs, { title: baseTitle, duration });
-  const srtOutput = generateSRT(paragraphs);
-  const vttOutput = generateVTT(paragraphs);
   const jsonOutput = JSON.stringify(paragraphs, null, 2);
 
   const getCurrentCode = () => {
@@ -64,16 +61,6 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
       case 'ttml':
         return ttmlXml;
       case 'breakdown':
-        return jsonOutput;
-      case 'enhanced-lrc':
-        return enhancedLrcOutput;
-      case 'lrc':
-        return lrcOutput;
-      case 'srt':
-        return srtOutput;
-      case 'vtt':
-        return vttOutput;
-      case 'json':
         return jsonOutput;
     }
   };
@@ -92,10 +79,8 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
 
   const handleShare = async () => {
     const baseName = filename.replace(/\.[^/.]+$/, '');
-    const ext = activeTab === 'enhanced-lrc' || activeTab === 'lrc' ? 'lrc' : activeTab;
-    const outputName = activeTab === 'enhanced-lrc'
-      ? `${baseName || 'lyrics'}_enhanced.lrc`
-      : `${baseName || 'lyrics'}.${ext}`;
+    const ext = activeTab === 'ttml' ? 'ttml' : 'json';
+    const outputName = `${baseName || 'lyrics'}.${ext}`;
 
     if (navigator.share) {
       try {
@@ -129,17 +114,11 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
 
   const handleDownload = (formatKey: string, content: string) => {
     const baseName = filename.replace(/\.[^/.]+$/, '');
-    const ext = formatKey === 'enhanced-lrc' || formatKey === 'lrc' ? 'lrc' : formatKey;
-    const outputName = formatKey === 'enhanced-lrc'
-      ? `${baseName || 'lyrics'}_enhanced.lrc`
-      : `${baseName || 'lyrics'}.${ext}`;
+    const ext = formatKey === 'ttml' ? 'ttml' : 'json';
+    const outputName = `${baseName || 'lyrics'}.${ext}`;
 
     const mimeTypes: Record<string, string> = {
-      lrc: 'text/plain;charset=utf-8',
-      'enhanced-lrc': 'text/plain;charset=utf-8',
       ttml: 'application/ttml+xml;charset=utf-8',
-      srt: 'text/plain;charset=utf-8',
-      vtt: 'text/vtt;charset=utf-8',
       json: 'application/json;charset=utf-8',
     };
 
@@ -167,101 +146,41 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
         <div className="flex items-center flex-wrap gap-1 bg-slate-950/80 backdrop-blur-md p-1 rounded-xl border border-white/10">
           <button
             onClick={() => setActiveTab('ttml')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'ttml'
                 ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-sm ring-1 ring-white/20'
-                : 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
             }`}
           >
-            <Code className="w-3.5 h-3.5" />
+            <Code className="w-4 h-4" />
             Apple Music TTML
           </button>
           <button
             onClick={() => setActiveTab('breakdown')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'breakdown'
                 ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white shadow-sm ring-1 ring-white/20'
-                : 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
             }`}
           >
-            <ListFilter className="w-3.5 h-3.5 text-cyan-300" />
+            <ListFilter className="w-4 h-4 text-cyan-300" />
             3-List Breakdown
-          </button>
-          <button
-            onClick={() => setActiveTab('enhanced-lrc')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === 'enhanced-lrc'
-                ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-white/20'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5 text-cyan-300" />
-            Enhanced .LRC
-          </button>
-          <button
-            onClick={() => setActiveTab('lrc')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === 'lrc'
-                ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-white/20'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Music2 className="w-3.5 h-3.5 text-indigo-300" />
-            Standard .LRC
-          </button>
-          <button
-            onClick={() => setActiveTab('srt')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === 'srt'
-                ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-white/20'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            SRT
-          </button>
-          <button
-            onClick={() => setActiveTab('vtt')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === 'vtt'
-                ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-white/20'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            WebVTT
-          </button>
-          <button
-            onClick={() => setActiveTab('json')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === 'json'
-                ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-white/20'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            JSON
           </button>
         </div>
 
         {/* Time format and schema controls */}
         {activeTab === 'ttml' && (
           <div className="flex items-center flex-wrap gap-2 text-xs">
-            <div className="flex items-center gap-1 bg-slate-950/80 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/10">
-              <span className="text-slate-400 text-[11px]">{t('formatOptions')}</span>
-              <select
+            <div className="w-40">
+              <CustomSelect
                 value={config.timeFormat}
-                onChange={(e) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    timeFormat: e.target.value as any,
-                  }))
-                }
-                className="bg-transparent text-cyan-300 font-mono text-[11px] focus:outline-none cursor-pointer"
-              >
-                <option value="clock" className="bg-slate-900">00:00:00.000 (Clock)</option>
-                <option value="seconds" className="bg-slate-900">1.250s (Seconds)</option>
-                <option value="frames" className="bg-slate-900">00:00:00:15 (SMPTE)</option>
-              </select>
+                onChange={(val) => setConfig((prev) => ({ ...prev, timeFormat: val as any }))}
+                options={[
+                  { label: '00:00:00.000 (Clock)', value: 'clock' },
+                  { label: '1.250s (Seconds)', value: 'seconds' },
+                  { label: '00:00:00:15 (SMPTE)', value: 'frames' },
+                ]}
+              />
             </div>
 
             <label className="flex items-center gap-1.5 cursor-pointer bg-slate-950/80 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/10 text-[11px] text-slate-300 hover:text-white">
@@ -323,18 +242,14 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
 
           <button
             onClick={() => handleDownload(activeTab, currentContent)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 ring-1 ring-white/20 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 ring-1 ring-white/20 transition-all cursor-pointer active:scale-95"
             title={`Download ${activeTab.toUpperCase()} subtitle file`}
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-4 h-4" />
             <span>
               {activeTab === 'ttml'
                 ? t('downloadTtml')
-                : activeTab === 'lrc'
-                ? 'Download .LRC'
-                : activeTab === 'enhanced-lrc'
-                ? 'Download Enhanced .LRC'
-                : `Download .${activeTab}`}
+                : 'Download Breakdown'}
             </span>
           </button>
         </div>
@@ -457,14 +372,14 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
                   <div key={p.id || idx} className="p-2.5 bg-slate-900/70 rounded-xl border border-slate-800/80 space-y-1.5">
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
                       <span className="font-mono text-cyan-300 font-medium">
-                        [{p.startTime.toFixed(2)}s &rarr; {p.endTime.toFixed(2)}s]
+                        [{p.start.toFixed(2)}s &rarr; {p.end.toFixed(2)}s]
                       </span>
                       <div className="flex items-center gap-1.5">
                         <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-semibold">
-                          {p.part || 'Verse'}
+                          {p.songPart || 'Verse'}
                         </span>
                         <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono">
-                          {p.agent || 'v1'}
+                          {p.agentId || 'v1'}
                         </span>
                       </div>
                     </div>
@@ -477,8 +392,8 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
                           key={w.id}
                           className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] text-slate-300 flex items-center gap-1"
                         >
-                          <span className="text-white">{w.text}</span>
-                          <span className="text-slate-500 text-[9px] font-mono">({w.startTime.toFixed(2)}s)</span>
+                          <span className="text-white">{w.word}</span>
+                          <span className="text-slate-500 text-[9px] font-mono">({w.start.toFixed(2)}s)</span>
                         </span>
                       ))}
                     </div>

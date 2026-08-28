@@ -4,18 +4,18 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Header } from './components/Header';
-import { AudioUploader } from './components/AudioUploader';
+import { MainHub } from './components/MainHub';
+import { StorageManager } from './components/StorageManager';
 import { LiveAudioAnalyzer, LiveAnalysisState } from './components/LiveAudioAnalyzer';
 import { AudioPlayerWaveform } from './components/AudioPlayerWaveform';
-import { SubtitleKaraokePreview } from './components/SubtitleKaraokePreview';
 import { TTMLCodeViewer } from './components/TTMLCodeViewer';
-import { TimelineVisualizer } from './components/TimelineVisualizer';
-import { TimingAnalytics } from './components/TimingAnalytics';
-import { TTMLSettingsModal } from './components/TTMLSettingsModal';
 import { LanguageSettingsModal } from './components/LanguageSettingsModal';
 import { InfoModal } from './components/InfoModal';
 import { HistoryModal } from './components/HistoryModal';
+import { SettingsSection } from './components/SettingsSection';
+import { NavigationDock } from './components/NavigationDock';
 import { AudioAnalysisResult, TTMLConfig, WordTiming, ParagraphSegment, PauseEvent } from './types';
 import { SAMPLE_DATASETS, createSyntheticAudioBuffer } from './utils/audioSamples';
 import { calculateTimingStats } from './utils/ttmlGenerator';
@@ -24,6 +24,7 @@ import { separateGluedWords, recalibrateWordTimestamps } from './utils/wordSplit
 import { UILanguage, getTranslation } from './utils/i18n';
 import { loadSavedTheme, applyThemeVariables } from './utils/theme';
 import { saveToHistory, SavedAnalysis } from './utils/storage';
+import { requestNotificationPermission, sendProgressNotification, sendCompletionNotification, sendErrorNotification } from './utils/notifications';
 import { AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
 
 const DEFAULT_CONFIG: TTMLConfig = {
@@ -45,6 +46,13 @@ const DEFAULT_CONFIG: TTMLConfig = {
   enableTextOutline: true,
   emitPerWordLang: true,
   enable120HzMode: true,
+  animationSpeed: 1.0,
+  transitionScale: 1.0,
+  visualizerStyle: 'bars',
+  visualizerSensitivity: 5,
+  subtitleFontWeight: '600',
+  subtitleLetterSpacing: '0px',
+  audioBufferDuration: 20,
   themeConfig: loadSavedTheme(),
 };
 
@@ -65,6 +73,7 @@ const INITIAL_LIVE_STATE: LiveAnalysisState = {
 };
 
 export default function App() {
+  const [currentTab, setCurrentTab] = useState<'hub' | 'editor' | 'history'>('hub');
   const [uiLanguage, setUiLanguage] = useState<UILanguage>('en');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [filename, setFilename] = useState<string>('japanese_english_song.wav');
@@ -100,6 +109,32 @@ export default function App() {
   useEffect(() => {
     applyThemeVariables(config.themeConfig);
   }, [config.themeConfig]);
+
+  // Automatically and safely revoke previous Object URLs to prevent memory leaks
+  const prevAudioUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prevUrl = prevAudioUrlRef.current;
+    if (prevUrl && prevUrl !== audioUrl) {
+      try {
+        URL.revokeObjectURL(prevUrl);
+        console.log('[Audio Leak Guard] Revoked unused object URL:', prevUrl);
+      } catch (e) {
+        console.warn('[Audio Leak Guard] Revoke error:', e);
+      }
+    }
+    prevAudioUrlRef.current = audioUrl;
+  }, [audioUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (prevAudioUrlRef.current) {
+        try {
+          URL.revokeObjectURL(prevAudioUrlRef.current);
+          console.log('[Audio Leak Guard] Revoked current object URL on unmount:', prevAudioUrlRef.current);
+        } catch (e) {}
+      }
+    };
+  }, []);
 
   // Load default initial sample for an immediate rich experience
   useEffect(() => {
@@ -190,7 +225,9 @@ export default function App() {
     try {
       // Create local object URL for preview player
       if (audioUrl) URL.revokeObjectURL(audioUrl);
-      const localUrl = URL.createObjectURL(fileOrBlob);
+      const arrayBuffer = await fileOrBlob.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: fileOrBlob.type });
+      const localUrl = URL.createObjectURL(blob);
       setAudioUrl(localUrl);
       setFilename(uploadedFilename);
 
@@ -205,12 +242,20 @@ export default function App() {
         console.warn('Browser failed to load temp audio for duration measurement.');
       };
 
+      const cleanMime = (fileOrBlob.type && fileOrBlob.type.startsWith('audio/'))
+        ? fileOrBlob.type.split(';')[0].trim()
+        : uploadedFilename.endsWith('.mp3') ? 'audio/mp3'
+        : uploadedFilename.endsWith('.m4a') ? 'audio/m4a'
+        : uploadedFilename.endsWith('.ogg') ? 'audio/ogg'
+        : uploadedFilename.endsWith('.flac') ? 'audio/flac'
+        : 'audio/wav';
+
       addLiveLog('Optimizing waveform: resampling to 16kHz mono PCM...');
 
-      // Chunk audio (slices songs into continuous ~35-40s chunks)
+      // Chunk audio (slices songs into continuous ~20-60s chunks)
       const { chunks, totalDuration: decodedDuration } = await optimizeAndChunkAudio(
         fileOrBlob,
-        38,
+        config.audioBufferDuration || 20,
         (msg, percent) => {
           setLiveState((prev) => ({
             ...prev,
@@ -227,6 +272,13 @@ export default function App() {
 
       const totalChunks = chunks.length;
       addLiveLog(`Prepared ${totalChunks} acoustic chunk${totalChunks > 1 ? 's' : ''} for parallel alignment`);
+
+    // Request notification permission and send initial status
+    requestNotificationPermission().then(granted => {
+      if (granted) {
+        sendProgressNotification(20, 'Preparing audio chunks...', uploadedFilename);
+      }
+    });
 
       setLiveState((prev) => ({
         ...prev,
@@ -258,12 +310,14 @@ export default function App() {
       const processSingleChunk = async (chunk: AudioChunk, index: number) => {
         addLiveLog(`Sending Chunk ${index + 1}/${totalChunks} (${chunk.startTime.toFixed(1)}s - ${chunk.endTime.toFixed(1)}s)...`);
 
+        const chunkMime = chunk.isOptimized ? 'audio/wav' : cleanMime;
+
         const response = await fetch('/api/analyze-chunk', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             audioBase64: chunk.base64,
-            mimeType: 'audio/wav',
+            mimeType: chunkMime,
             chunkIndex: index,
             totalChunks,
             timeOffset: chunk.startTime,
@@ -293,6 +347,9 @@ export default function App() {
 
         chunkResults[index] = chunkData;
         completedChunksCount++;
+
+        // Yield to main thread to prevent UI freezing
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         // Live stats computation
         if (chunkData.title && !derivedTitle) {
@@ -345,6 +402,12 @@ export default function App() {
           estimatedWpm: liveWpm,
         }));
 
+        sendProgressNotification(
+          progressPercent, 
+          `Processed ${completedChunksCount}/${totalChunks} chunks [${latestSongPart}]`,
+          uploadedFilename
+        );
+
         addLiveLog(`Chunk ${index + 1} aligned: +${chunkWordsCount} words, +${chunkParas.length} lines [${latestSongPart}]`);
       };
 
@@ -368,6 +431,7 @@ export default function App() {
         currentStep: 'Performing zero-loss word boundary stitching & Apple Music TTML synchronization...',
         progressPercent: 95,
       }));
+      sendProgressNotification(95, 'Synchronizing word boundaries...', uploadedFilename);
       addLiveLog('Zero-loss stitching: unifying micro-timestamps, pause gaps, and song parts...');
 
       // ZERO-LOSS WORD MERGING: Cleanly stitch all chunks in canonical order
@@ -380,9 +444,14 @@ export default function App() {
         const chunkData = chunkResults[i];
         if (!chunkData) continue;
 
+        // Yield to main thread periodically
+        if (i % 2 === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+
         const chunkParas: ParagraphSegment[] = chunkData.paragraphs || [];
 
-        for (const p of chunkParas) {
+    for (const p of chunkParas) {
           const pId = `p${globalParaIndex++}`;
           const rawWords = p.words || [];
           const unifiedWords: WordTiming[] = [];
@@ -392,8 +461,10 @@ export default function App() {
           for (const w of rawWords) {
             const rawWordStr = String(w.word || '').trim();
             const subTokens = separateGluedWords(rawWordStr);
-            const wStart = Number((Number(w.start) || 0).toFixed(3));
-            const wEnd = Number((Number(w.end) || wStart + 0.3).toFixed(3));
+            const wStart = Number((Number(w.start) || 0).toFixed(4));
+            const wEnd = Number((Number(w.end) || wStart + 0.3).toFixed(4));
+            
+            // Proportional distribution for sub-tokens with high-precision micro-offsets
             const totalSpan = Math.max(0.04 * subTokens.length, wEnd - wStart);
             const wIsBg = w.isBackground ?? pIsBg;
             const wAgent = w.agentId || pAgentId;
@@ -404,17 +475,17 @@ export default function App() {
 
               subTokens.forEach((token, subIdx) => {
                 const charRatio = Math.max(1, token.length) / totalChars;
-                const subDuration = Number(Math.max(0.03, totalSpan * charRatio).toFixed(3));
-                const subEnd = subIdx === subTokens.length - 1 ? wEnd : Number((runningStart + subDuration).toFixed(3));
+                const subDuration = Number(Math.max(0.02, totalSpan * charRatio).toFixed(4));
+                const subEnd = subIdx === subTokens.length - 1 ? wEnd : Number((runningStart + subDuration).toFixed(4));
                 const subId = `w${globalWordIndex++}`;
 
                 const wordObj: WordTiming = {
                   id: subId,
                   word: token,
-                  start: Number(runningStart.toFixed(3)),
-                  end: Number(subEnd.toFixed(3)),
-                  duration: Number(Math.max(0.01, subEnd - runningStart).toFixed(3)),
-                  pauseAfter: subIdx === subTokens.length - 1 ? Number((w.pauseAfter || 0).toFixed(3)) : 0,
+                  start: Number(runningStart.toFixed(4)),
+                  end: Number(subEnd.toFixed(4)),
+                  duration: Number(Math.max(0.01, subEnd - runningStart).toFixed(4)),
+                  pauseAfter: subIdx === subTokens.length - 1 ? Number((w.pauseAfter || 0).toFixed(4)) : 0,
                   pauseType: subIdx === subTokens.length - 1 ? w.pauseType || 'none' : 'none',
                   confidence: Number((w.confidence ?? 0.95).toFixed(2)),
                   lang: w.lang || (p.lang !== primaryTrackLanguage ? p.lang : undefined),
@@ -434,8 +505,8 @@ export default function App() {
                 word: subTokens[0] || rawWordStr,
                 start: wStart,
                 end: wEnd,
-                duration: Number(Math.max(0.01, wEnd - wStart).toFixed(3)),
-                pauseAfter: Number((w.pauseAfter || 0).toFixed(3)),
+                duration: Number(Math.max(0.01, wEnd - wStart).toFixed(4)),
+                pauseAfter: Number((w.pauseAfter || 0).toFixed(4)),
                 pauseType: w.pauseType || 'none',
                 confidence: Number((w.confidence ?? 0.95).toFixed(2)),
                 lang: w.lang || (p.lang !== primaryTrackLanguage ? p.lang : undefined),
@@ -568,6 +639,7 @@ export default function App() {
         detectedLanguages: detectedLanguagesList,
       }));
       addLiveLog(`Analysis complete! Successfully synchronized ${totalWords} words with micro-precision.`);
+      sendCompletionNotification(uploadedFilename);
 
       setTimeout(() => {
         setIsAnalyzing(false);
@@ -576,6 +648,7 @@ export default function App() {
       console.error('[TTML Alignment Error]', err?.message || err);
       const msg = err.message || 'An unexpected error occurred during phonetic analysis.';
       setErrorMessage(msg);
+      sendErrorNotification(msg, `Extraction Failed: ${uploadedFilename}`);
       addLiveLog(`Error: ${msg}`);
       setIsAnalyzing(false);
     } finally {
@@ -624,10 +697,14 @@ export default function App() {
   };
 
   const activeWordId = useMemo(() => {
-    if (!analysisResult) return null;
+    if (!analysisResult || !analysisResult.words.length) return null;
+    
+    // Find the word whose range [start, end] contains the currentTime
+    // Strict boundary: active exactly from start to end
     const activeWord = analysisResult.words.find(
-      (w) => currentTime >= w.start && currentTime <= w.end
+      (w) => currentTime >= w.start && currentTime < w.end
     );
+    
     return activeWord ? activeWord.id : null;
   }, [analysisResult, currentTime]);
 
@@ -637,13 +714,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden box-border bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
-      {/* Universal Navigation Header with UI Language Switcher */}
+      {/* Universal Navigation Header with UI Language Switcher & Tab Bar */}
       <Header
-        onLoadSample={loadSampleDataset}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        onLoadSample={(sId) => {
+          loadSampleDataset(sId);
+          setCurrentTab('editor');
+        }}
         onOpenInfo={() => setIsInfoOpen(true)}
-        onOpenLanguageSettings={() => setIsLanguageSettingsOpen(true)}
-        onOpenHistory={() => setIsHistoryOpen(true)}
         hasData={Boolean(analysisResult)}
         onReset={() => {
           setAnalysisResult(null);
@@ -651,6 +730,7 @@ export default function App() {
           setCurrentTime(0);
           setIsPlaying(false);
           setErrorMessage(null);
+          setCurrentTab('hub');
         }}
         uiLanguage={uiLanguage}
         setUiLanguage={setUiLanguage}
@@ -660,8 +740,15 @@ export default function App() {
         primaryLanguage={analysisResult?.language}
       />
 
+      <NavigationDock
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        uiLanguage={uiLanguage}
+        hasData={Boolean(analysisResult)}
+      />
+
       {/* Main Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 box-border overflow-x-hidden">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 pb-32 space-y-6 box-border overflow-x-hidden">
         {/* Error Notification Banner with Instant Retry */}
         {errorMessage && (
           <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg animate-in fade-in">
@@ -695,7 +782,10 @@ export default function App() {
                 </button>
               )}
               <button
-                onClick={() => loadSampleDataset('japanese-english-song')}
+                onClick={() => {
+                  loadSampleDataset('japanese-english-song');
+                  setCurrentTab('editor');
+                }}
                 className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer border border-slate-700"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -705,137 +795,187 @@ export default function App() {
           </div>
         )}
 
-        {/* Live Audio Analyzer Screen when actively processing */}
-        {isAnalyzing && (
-          <LiveAudioAnalyzer state={liveState} filename={filename} uiLanguage={uiLanguage} />
-        )}
-
-        {/* Top: Upload & Audio Ingestion Section */}
-        {!isAnalyzing && (
-          <AudioUploader
-            onAnalyzeAudio={handleAnalyzeAudio}
-            onSelectSample={loadSampleDataset}
-            isAnalyzing={isAnalyzing}
-            analysisStep={liveState.currentStep}
-            analysisProgress={liveState.progressPercent}
-            pauseThreshold={pauseThreshold}
-            setPauseThreshold={setPauseThreshold}
-            languageMode={languageMode}
-            setLanguageMode={setLanguageMode}
-            selectedLanguage={selectedLanguage}
-            setSelectedLanguage={setSelectedLanguage}
-            lastFile={lastFailedFile}
-            uiLanguage={uiLanguage}
-          />
-        )}
-
-        {analysisResult && (
-          <>
-            {/* Timing & Acoustic Analytics Summary */}
-            <TimingAnalytics stats={analysisResult.stats} duration={duration || analysisResult.duration} uiLanguage={uiLanguage} />
-
-            {/* Audio Waveform & Player */}
-            <AudioPlayerWaveform
-              audioUrl={audioUrl}
-              duration={duration || analysisResult.duration}
-              currentTime={currentTime}
-              setCurrentTime={setCurrentTime}
-              isPlaying={isPlaying}
-              setIsPlaying={setIsPlaying}
-              words={analysisResult.words}
-              pauses={analysisResult.pauses}
-              activeWordId={activeWordId}
-              uiLanguage={uiLanguage}
-            />
-
-            {/* 2-Column Responsive Workspace: Subtitle Preview + TTML XML / LRC Code Viewer */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Column 1: Live Karaoke Subtitle Preview Screen */}
-              <SubtitleKaraokePreview
-                paragraphs={analysisResult.paragraphs}
-                currentTime={currentTime}
-                onSeekToTime={handleSeek}
-                config={config}
-                activeWordId={activeWordId}
+        <AnimatePresence mode="wait">
+          {isAnalyzing ? (
+            <motion.div
+              key="analyzer"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <LiveAudioAnalyzer state={liveState} filename={filename} uiLanguage={uiLanguage} />
+            </motion.div>
+          ) : currentTab === 'hub' ? (
+            <motion.div
+              key="hub"
+              initial={{ opacity: 0, x: -15 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 15 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <MainHub
+                onAnalyzeAudio={handleAnalyzeAudio}
+                onSelectSample={(sId) => {
+                  loadSampleDataset(sId);
+                  setCurrentTab('editor');
+                }}
+                onOpenHistoryItem={(item) => {
+                  setAnalysisResult(item.data);
+                  setFilename(item.filename);
+                  setDuration(item.data.duration);
+                  setConfig((prev) => ({
+                    ...prev,
+                    title: item.data.title || item.filename,
+                  }));
+                  setCurrentTab('editor');
+                }}
+                onNavigateToTab={setCurrentTab}
                 uiLanguage={uiLanguage}
               />
-
-              {/* Column 2: Dual TTML XML & LRC Code Viewer with Direct Download & Native Share */}
-              <TTMLCodeViewer
-                paragraphs={analysisResult.paragraphs}
+            </motion.div>
+          ) : currentTab === 'history' ? (
+            <motion.div
+              key="history"
+              initial={{ opacity: 0, x: 15 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -15 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <StorageManager
+                onSelectSong={(item) => {
+                  setAnalysisResult(item.data);
+                  setFilename(item.filename);
+                  setDuration(item.data.duration);
+                  setConfig((prev) => ({
+                    ...prev,
+                    title: item.data.title || item.filename,
+                  }));
+                  setCurrentTab('editor');
+                }}
+                uiLanguage={uiLanguage}
+              />
+            </motion.div>
+          ) : currentTab === 'settings' ? (
+            <motion.div
+              key="settings"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <SettingsSection
+                uiLanguage={uiLanguage}
+                setUiLanguage={setUiLanguage}
                 config={config}
                 setConfig={setConfig}
-                filename={filename}
-                duration={duration || analysisResult.duration}
-                detectedLanguages={analysisResult.detectedLanguages}
-                uiLanguage={uiLanguage}
               />
-            </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="editor"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="space-y-6"
+            >
+              {analysisResult ? (
+                <>
+                  {/* Sleek Active Track Header */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-300">
+                        <Sparkles className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
+                          <span className="uppercase text-cyan-400 font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-white/10">
+                            {analysisResult.language}
+                          </span>
+                          <span>&bull;</span>
+                          <span>{analysisResult.stats.totalWords} synced words</span>
+                          <span>&bull;</span>
+                          <span>{analysisResult.paragraphs.length} lines</span>
+                        </div>
+                        <h2 className="text-base font-bold text-slate-100 truncate max-w-md">
+                          {analysisResult.title || filename}
+                        </h2>
+                      </div>
+                    </div>
 
-            {/* Full-width Word-level & Pause Inspector Timeline Table */}
-            <TimelineVisualizer
-              words={analysisResult.words}
-              pauses={analysisResult.pauses}
-              paragraphs={analysisResult.paragraphs}
-              duration={duration || analysisResult.duration}
-              currentTime={currentTime}
-              activeWordId={activeWordId}
-              onSeekToTime={handleSeek}
-              onUpdateWord={handleUpdateWord}
-              uiLanguage={uiLanguage}
-            />
-          </>
-        )}
+                    <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                      <button
+                        onClick={() => setCurrentTab('hub')}
+                        className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/10 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Import Another Song</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Audio Waveform & Player */}
+                  <AudioPlayerWaveform
+                    audioUrl={audioUrl}
+                    duration={duration || analysisResult.duration}
+                    currentTime={currentTime}
+                    setCurrentTime={setCurrentTime}
+                    isPlaying={isPlaying}
+                    setIsPlaying={setIsPlaying}
+                    words={analysisResult.words}
+                    pauses={analysisResult.pauses}
+                    activeWordId={activeWordId}
+                    uiLanguage={uiLanguage}
+                    config={config}
+                  />
+
+                  {/* Single Column Code Viewer (Subtitle Preview Removed) */}
+                  <div className="w-full">
+                    <TTMLCodeViewer
+                      paragraphs={analysisResult.paragraphs}
+                      config={config}
+                      setConfig={setConfig}
+                      filename={filename}
+                      duration={duration || analysisResult.duration}
+                      detectedLanguages={analysisResult.detectedLanguages}
+                      uiLanguage={uiLanguage}
+                    />
+                  </div>
+                </>
+              ) : (
+                /* Empty Studio State */
+                <div className="p-8 sm:p-12 rounded-3xl glass-card border border-white/10 text-center space-y-6 max-w-2xl mx-auto my-8 shadow-2xl bg-slate-900/60 backdrop-blur-xl">
+                  <div className="w-16 h-16 rounded-3xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center mx-auto shadow-inner">
+                    <Sparkles className="w-8 h-8 text-cyan-400" />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-xl sm:text-2xl font-extrabold text-slate-100">
+                      No Track Loaded in Karaoke Studio
+                    </h2>
+                    <p className="text-sm text-slate-400 leading-relaxed max-w-md mx-auto">
+                      Upload a local audio file or choose an instant sample preset in the Main Hub to start editing micro-timestamps and singing karaoke.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setCurrentTab('hub')}
+                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 via-cyan-600 to-indigo-500 hover:from-indigo-500 hover:to-cyan-500 text-white font-bold text-xs shadow-xl shadow-cyan-500/20 inline-flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                    <span>Go to Main Hub to Load Track</span>
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Modals */}
-      <TTMLSettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        config={config}
-        setConfig={setConfig}
-        uiLanguage={uiLanguage}
-        setUiLanguage={setUiLanguage}
-        onSelectUILanguage={setUiLanguage}
-      />
-
-      <LanguageSettingsModal
-        isOpen={isLanguageSettingsOpen}
-        onClose={() => setIsLanguageSettingsOpen(false)}
-        uiLanguage={uiLanguage}
-        currentLanguage={uiLanguage}
-        setUiLanguage={setUiLanguage}
-        onSelectLanguage={setUiLanguage}
-      />
-
       <InfoModal
         isOpen={isInfoOpen}
         onClose={() => setIsInfoOpen(false)}
       />
-
-      <HistoryModal
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        onSelectHistoryItem={(item) => {
-          setAnalysisResult(item.data);
-          setFilename(item.filename);
-          setDuration(item.data.duration);
-          setConfig((prev) => ({
-            ...prev,
-            title: item.data.title || item.filename,
-          }));
-        }}
-        uiLanguage={uiLanguage}
-      />
-
-      {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 px-6 py-4 text-center text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-          TTML Subtitle Studio &bull; Apple Music TTML &amp; W3C Timed Text Engine
-        </span>
-        <span className="text-slate-600">Strict Word-Level Micro-Timestamps &bull; Universal Multilingual Alignment</span>
-      </footer>
     </div>
   );
 }

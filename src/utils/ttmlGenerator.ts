@@ -120,6 +120,7 @@ export function generateTTML(
   xml += `    xmlns:ttm="http://www.w3.org/ns/ttml#metadata"\n`;
   xml += `    xmlns:itunes="http://music.apple.com/lyric-ttml-internal"\n`;
   xml += `    xml:lang="${escapeXml(language)}"\n`;
+  xml += `    xml:space="preserve"\n`;
   xml += `    itunes:timing="Word">\n`;
 
   // Apple Music head metadata with multi-agent definitions
@@ -135,7 +136,7 @@ export function generateTTML(
 
   // Body with grouped <div> sections
   const durAttr = metadata?.duration ? ` dur="${formatTimecode(metadata.duration, 'seconds', frameRate)}"` : '';
-  xml += `  <body${durAttr}>\n`;
+  xml += `  <body${durAttr} xml:space="preserve">\n`;
   xml += `    <!-- 3. Synchronized Timed Text List -->\n`;
 
   // Group paragraphs into songPart blocks (e.g. Verse, Chorus, Bridge, Outro, Intro)
@@ -204,10 +205,10 @@ export function generateTTML(
 
         const cleanWord = w.word.trim();
         const isLastWord = wIdx === para.words.length - 1;
-        // Non-final words include trailing space inside the span
+        // Non-final words include trailing space inside the span AND as a spacing token outside
         const trailingSpace = isLastWord ? '' : ' ';
 
-        xml += `<span begin="${wBegin}" end="${wEnd}"${wAgentAttr}${wLangAttr}>${escapeXml(cleanWord)}${trailingSpace}</span>`;
+        xml += `<span begin="${wBegin}" end="${wEnd}"${wAgentAttr}${wLangAttr} xml:space="preserve">${escapeXml(cleanWord)}${trailingSpace}</span>${trailingSpace}`;
       });
 
       xml += `</p>\n`;

@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX, Gauge, Sparkles, Music2, Keyboard } from 'lucide-react';
-import { WordTiming, PauseEvent } from '../types';
+import { Play, Pause, RotateCcw, RotateCw, Gauge, Sparkles, Music2, Keyboard } from 'lucide-react';
+import { WordTiming, PauseEvent, TTMLConfig } from '../types';
 import { UILanguage, getTranslation } from '../utils/i18n';
+import { CustomSelect } from './CustomSelect';
 
 interface AudioPlayerWaveformProps {
   audioUrl: string | null;
@@ -14,6 +15,7 @@ interface AudioPlayerWaveformProps {
   pauses: PauseEvent[];
   activeWordId: string | null;
   uiLanguage: UILanguage;
+  config: TTMLConfig;
 }
 
 export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
@@ -27,14 +29,13 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
   pauses,
   activeWordId,
   uiLanguage,
+  config,
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const isDraggingRef = useRef<boolean>(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
-  const [volume, setVolume] = useState(0.9);
-  const [isMuted, setIsMuted] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   const t = (key: string) => getTranslation(uiLanguage, key);
@@ -66,10 +67,59 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
     };
   }, [isPlaying, setCurrentTime]);
 
+  // Strict cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+        } catch (e) {
+          // ignore
+        }
+      }
+      setIsPlaying(false);
+    };
+  }, [setIsPlaying]);
+
+  // Reset states and explicitly trigger load when audio URL changes
+  useEffect(() => {
+    setIsPlaying(false);
+    setCurrentTime(0);
+    const el = audioRef.current;
+    if (el) {
+      try {
+        el.pause();
+        el.currentTime = 0;
+        el.load();
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [audioUrl, setIsPlaying, setCurrentTime]);
+
   // Sync internal audio element when external currentTime seeks (tolerance < 0.06s)
   useEffect(() => {
-    if (audioRef.current && !isDraggingRef.current && Math.abs(audioRef.current.currentTime - currentTime) > 0.06) {
-      audioRef.current.currentTime = currentTime;
+    const audio = audioRef.current;
+    if (audio && !isDraggingRef.current && Math.abs(audio.currentTime - currentTime) > 0.06) {
+      try {
+        // Check if metadata is loaded (readyState >= 1)
+        if (audio.readyState >= 1) {
+          audio.currentTime = currentTime;
+        } else {
+          // Otherwise, set it once metadata loads
+          const handleLoadedMetadata = () => {
+            try {
+              audio.currentTime = currentTime;
+            } catch (e) {
+              console.warn('Failed to set deferred currentTime:', e);
+            }
+            audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+          };
+          audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+        }
+      } catch (e) {
+        console.warn('Failed to set currentTime on audio element:', e);
+      }
     }
   }, [currentTime]);
 
@@ -99,13 +149,6 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
     }
   }, [playbackRate]);
 
-  // Sync volume
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = isMuted ? 0 : volume;
-    }
-  }, [volume, isMuted]);
-
   // Global keyboard shortcuts for fluid media playback control
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -124,16 +167,6 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
       } else if (e.code === 'ArrowRight' || e.code === 'KeyL') {
         e.preventDefault();
         seekRelative(5);
-      } else if (e.code === 'ArrowUp') {
-        e.preventDefault();
-        setVolume((v) => Math.min(1, Number((v + 0.1).toFixed(2))));
-        setIsMuted(false);
-      } else if (e.code === 'ArrowDown') {
-        e.preventDefault();
-        setVolume((v) => Math.max(0, Number((v - 0.1).toFixed(2))));
-      } else if (e.code === 'KeyM') {
-        e.preventDefault();
-        setIsMuted((m) => !m);
       }
     };
 
@@ -161,7 +194,10 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // Draw pause intervals (glowing rose zones)
+    if (config.visualizerStyle === 'none') {
+      // Still draw playhead
+    } else {
+      // Draw pauses...
     pauses.forEach((p) => {
       const startX = (p.start / effectiveDuration) * width;
       const endX = (p.end / effectiveDuration) * width;
@@ -175,19 +211,27 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
       ctx.fillRect(startX, 0, pauseWidth, 2.5);
     });
 
-    // Draw acoustic word waveform bars with smooth audio curves
-    const totalBars = 140;
+    // Visualizer logic
+    const totalBars = config.visualizerStyle === 'circles' ? 60 : 140;
     const barWidth = width / totalBars;
+    const sensitivity = config.visualizerSensitivity ?? 5;
+    const style = config.visualizerStyle ?? 'bars';
 
+    let wordIdx = 0;
     for (let i = 0; i < totalBars; i++) {
       const barTime = (i / totalBars) * effectiveDuration;
 
-      // Find matching word
-      const matchingWord = words.find((w) => barTime >= w.start && barTime <= w.end);
+      while (wordIdx < words.length && words[wordIdx].end < barTime) {
+        wordIdx++;
+      }
+
+      const matchingWord = (wordIdx < words.length && barTime >= words[wordIdx].start) ? words[wordIdx] : undefined;
       const isWordActive = matchingWord && activeWordId === matchingWord.id;
       const isPast = barTime <= currentTime;
 
       let barHeightRatio = 0.22 + (Math.sin(i * 0.45) * 0.14 + Math.cos(i * 0.82) * 0.14);
+      barHeightRatio *= (sensitivity / 5);
+
       if (matchingWord) {
         barHeightRatio = Math.min(0.92, barHeightRatio + 0.42);
       } else {
@@ -210,10 +254,21 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
         ctx.fillStyle = isPast ? '#334155' : '#1e293b';
       }
 
-      ctx.beginPath();
-      ctx.roundRect(x + 1, y, Math.max(1.5, barWidth - 1.5), barHeight, 2);
-      ctx.fill();
+      if (style === 'bars') {
+        ctx.beginPath();
+        ctx.roundRect(x + 1, y, Math.max(1.5, barWidth - 1.5), barHeight, 2);
+        ctx.fill();
+      } else if (style === 'wave') {
+        ctx.beginPath();
+        ctx.ellipse(x + barWidth / 2, height / 2, barWidth / 2, barHeight / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (style === 'circles') {
+        ctx.beginPath();
+        ctx.arc(x + barWidth / 2, height / 2, barHeight / 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
+  }
 
     // Draw Playhead cursor line
     const playheadX = (currentTime / effectiveDuration) * width;
@@ -233,7 +288,7 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
     ctx.stroke();
-  }, [duration, currentTime, words, pauses, activeWordId]);
+  }, [duration, currentTime, words, pauses, activeWordId, config.visualizerStyle, config.visualizerSensitivity]);
 
   const updateScrubTime = useCallback((clientX: number) => {
     const canvas = canvasRef.current;
@@ -316,8 +371,9 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
             setIsPlaying(false);
             setCurrentTime(duration);
           }}
-          onError={(e) => {
-            console.error('Audio playback error occurred.');
+          onError={() => {
+            console.warn('Audio playback source unavailable or interrupted.');
+            setIsPlaying(false);
           }}
         />
       )}
@@ -382,7 +438,7 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
           </div>
         </div>
 
-        {/* Speed, Volume, and Shortcuts controls */}
+        {/* Speed and Shortcuts controls */}
         <div className="flex items-center gap-2.5">
           {/* Shortcuts Info Toggle */}
           <button
@@ -398,42 +454,18 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
           </button>
 
           {/* Speed Selector */}
-          <div className="flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 shadow-sm">
-            <Gauge className="w-3.5 h-3.5 text-indigo-400" />
-            <select
+          <div className="w-24">
+            <CustomSelect
               value={playbackRate}
-              onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
-              className="bg-transparent text-xs text-slate-200 font-medium focus:outline-none cursor-pointer"
-            >
-              <option value="0.5" className="bg-slate-900">0.5x</option>
-              <option value="0.75" className="bg-slate-900">0.75x</option>
-              <option value="1.0" className="bg-slate-900">1.0x</option>
-              <option value="1.25" className="bg-slate-900">1.25x</option>
-              <option value="1.5" className="bg-slate-900">1.5x</option>
-              <option value="2.0" className="bg-slate-900">2.0x</option>
-            </select>
-          </div>
-
-          {/* Volume slider */}
-          <div className="flex items-center gap-2 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-xl border border-white/10 shadow-sm">
-            <button
-              onClick={() => setIsMuted(!isMuted)}
-              className="text-slate-400 hover:text-slate-200 cursor-pointer"
-              title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
-            >
-              {isMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={isMuted ? 0 : volume}
-              onChange={(e) => {
-                setVolume(parseFloat(e.target.value));
-                if (isMuted) setIsMuted(false);
-              }}
-              className="w-16 accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              onChange={(v) => setPlaybackRate(v as number)}
+              options={[
+                { label: '0.5x', value: 0.5 },
+                { label: '0.75x', value: 0.75 },
+                { label: '1.0x', value: 1.0 },
+                { label: '1.25x', value: 1.25 },
+                { label: '1.5x', value: 1.5 },
+                { label: '2.0x', value: 2.0 },
+              ]}
             />
           </div>
         </div>

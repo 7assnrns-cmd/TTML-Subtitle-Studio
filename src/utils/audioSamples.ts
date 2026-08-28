@@ -351,7 +351,7 @@ SAMPLE_DATASETS.forEach((sample) => {
 export function createSyntheticAudioBuffer(words: any[], totalDuration: number): Blob {
   const sampleRate = 22050;
   const numSamples = Math.ceil(totalDuration * sampleRate);
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const audioContext = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(1, numSamples, sampleRate);
   const buffer = audioContext.createBuffer(1, numSamples, sampleRate);
   const data = buffer.getChannelData(0);
 
@@ -424,9 +424,9 @@ function bufferToWave(abuffer: AudioBuffer, len: number): Blob {
 
   while (pos < length) {
     for (let i = 0; i < numOfChan; i++) {
-      sample = Math.max(-1, Math.min(1, channels[i][offset]));
-      sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
-      view.setInt16(pos, sample, true);
+      sample = Math.max(-1, Math.min(1, channels[i][offset] || 0));
+      const intSample = sample < 0 ? sample * 32768 : sample * 32767;
+      view.setInt16(pos, intSample | 0, true);
       pos += 2;
     }
     offset++;

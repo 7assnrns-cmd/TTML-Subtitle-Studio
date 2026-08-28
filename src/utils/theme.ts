@@ -106,6 +106,11 @@ export const DEFAULT_THEME_CONFIG: ThemeCustomizerConfig = {
   glassOpacity: 0.65,
   accentColor: 'cyan',
   customAccentHex: '#06b6d4',
+  glowIntensity: 0.35,
+  borderRadius: 16,
+  fontFamily: 'jakarta',
+  fontWeight: '600',
+  gradientPreset: 'linear',
 };
 
 export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -138,6 +143,18 @@ export function applyThemeVariables(theme: ThemeCustomizerConfig = DEFAULT_THEME
   root.style.setProperty('--glass-blur', `${blurVal}px`);
   root.style.setProperty('--glass-border-opacity', `${borderOp}`);
   root.style.setProperty('--glass-bg-opacity', `${glassOp}`);
+  root.style.setProperty('--glass-radius', `${theme.borderRadius ?? 16}px`);
+  root.style.setProperty('--accent-glow-opacity', `${theme.glowIntensity ?? 0.35}`);
+
+  // Typography
+  const fontMap: Record<string, string> = {
+    jakarta: '"Plus Jakarta Sans", sans-serif',
+    inter: '"Inter", sans-serif',
+    mono: '"JetBrains Mono", monospace',
+    sans: 'system-ui, sans-serif',
+  };
+  root.style.setProperty('--font-family-studio', fontMap[theme.fontFamily ?? 'jakarta']);
+  root.style.setProperty('--font-weight-studio', theme.fontWeight ?? '600');
 
   // Accent color variables
   const preset = ACCENT_PRESETS[theme.accentColor] || ACCENT_PRESETS.cyan;
@@ -153,7 +170,7 @@ export function applyThemeVariables(theme: ThemeCustomizerConfig = DEFAULT_THEME
   root.style.setProperty('--accent-primary-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
   root.style.setProperty('--accent-secondary', preset.secondaryHex);
   root.style.setProperty('--accent-secondary-rgb', `${secRgb.r}, ${secRgb.g}, ${secRgb.b}`);
-  root.style.setProperty('--accent-glow', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`);
+  root.style.setProperty('--accent-glow', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${theme.glowIntensity ?? 0.35})`);
   root.style.setProperty('--accent-text', preset.textHex || primaryHex);
 
   // Save to localStorage

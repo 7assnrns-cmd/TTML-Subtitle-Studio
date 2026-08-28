@@ -307,24 +307,25 @@ export function recalibrateWordTimestamps(
   const maxDur = audioDuration && audioDuration > 0 ? audioDuration : Infinity;
 
   return words.map((w, idx) => {
-    let start = Math.max(lastEnd, Number((Number(w.start) || 0).toFixed(3)));
-    let end = Math.max(start + 0.040, Number((Number(w.end) || start + 0.25).toFixed(3)));
+    // Precise micro-alignment ensuring no overlaps and strict monotonic increase
+    let start = Math.max(lastEnd, Number((Number(w.start) || 0).toFixed(4)));
+    let end = Math.max(start + 0.010, Number((Number(w.end) || start + 0.10).toFixed(4)));
 
     if (maxDur !== Infinity && end > maxDur) {
       end = maxDur;
       if (start >= end) {
-        start = Math.max(0, end - 0.040);
+        start = Math.max(0, end - 0.010);
       }
     }
 
-    const duration = Number((end - start).toFixed(3));
+    const duration = Number((end - start).toFixed(4));
     lastEnd = end;
 
     return {
       ...w,
       word: w.word.trim(),
-      start: Number(start.toFixed(3)),
-      end: Number(end.toFixed(3)),
+      start: Number(start.toFixed(4)),
+      end: Number(end.toFixed(4)),
       duration,
     };
   });
@@ -356,15 +357,15 @@ export function distributeSubwordTimings(
   });
 
   const totalWeight = weights.reduce((a, b) => a + b, 0) || subwords.length;
-  const totalDuration = Math.max(0.12 * subwords.length, spanEnd - spanStart);
+  const totalDuration = Math.max(0.10 * subwords.length, spanEnd - spanStart);
   let currentStart = spanStart;
 
   return subwords.map((sw, i) => {
     const isLast = i === subwords.length - 1;
     const wordDur = (weights[i] / totalWeight) * totalDuration;
     const wStart = Number(currentStart.toFixed(3));
-    const wEnd = isLast ? Number(spanEnd.toFixed(3)) : Number(Math.min(spanEnd, currentStart + wordDur * 0.94).toFixed(3));
-    const duration = Number(Math.max(0.04, wEnd - wStart).toFixed(3));
+    const wEnd = isLast ? Number(spanEnd.toFixed(3)) : Number(Math.min(spanEnd, currentStart + wordDur * 0.96).toFixed(3));
+    const duration = Number(Math.max(0.02, wEnd - wStart).toFixed(3));
 
     currentStart = wStart + wordDur;
 
@@ -372,9 +373,9 @@ export function distributeSubwordTimings(
       ...baseProps,
       word: sw.trim(),
       start: wStart,
-      end: Math.max(wStart + 0.04, wEnd),
+      end: Math.max(wStart + 0.02, wEnd),
       duration,
-      pauseAfter: isLast ? 0 : 0.02,
+      pauseAfter: isLast ? 0 : 0.01,
     };
   });
 }

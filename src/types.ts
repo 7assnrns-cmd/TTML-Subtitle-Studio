@@ -82,6 +82,11 @@ export interface ThemeCustomizerConfig {
   glassOpacity: number;  // in range 0.30 - 0.95 (default 0.65)
   accentColor: AccentColorPreset;
   customAccentHex: string;
+  glowIntensity?: number; // range 0 - 1 (default 0.35)
+  borderRadius?: number; // range 0 - 40 (default 16)
+  fontFamily?: string; // 'sans' | 'mono' | 'inter' | 'jakarta'
+  fontWeight?: string; // '300' | '400' | '500' | '600' | '700'
+  gradientPreset?: 'none' | 'linear' | 'radial' | 'mesh';
 }
 
 export interface TTMLConfig {
@@ -108,5 +113,13 @@ export interface TTMLConfig {
   defaultAgentId?: string; // Default agent ID (e.g. "v1")
   enableMultiAgent?: boolean; // Emit <ttm:agent> and ttm:agent attributes in TTML
   enableBackgroundVocals?: boolean; // Format secondary vocal lines as background/harmonies
+  // Advanced Customization
+  animationSpeed?: number; // range 0.1 - 2.0 (default 1.0)
+  transitionScale?: number; // range 0.5 - 1.5 (default 1.0)
+  visualizerStyle?: 'bars' | 'wave' | 'circles' | 'none';
+  visualizerSensitivity?: number; // range 1 - 10 (default 5)
+  subtitleFontWeight?: string; // e.g. '400', '600', '700'
+  subtitleLetterSpacing?: string; // e.g. '0px', '1px', '2px'
+  audioBufferDuration?: number; // range 10 - 60 (default 20 seconds)
 }
 
