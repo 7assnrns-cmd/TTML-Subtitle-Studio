@@ -280,7 +280,10 @@ ${contextHint ? `\nContext note: ${contextHint}` : ''}`;
     if (openaiKey) {
       try {
         console.log(`[TTML Backend] Attemping primary analysis with OpenAI (GPT-4o-audio)...`);
-        const openai = new OpenAI({ apiKey: openaiKey });
+        const openai = new OpenAI({ 
+          apiKey: openaiKey,
+          baseURL: 'https://api.openai.com/v1'
+        });
         
         const completion = await openai.chat.completions.create({
           model: 'gpt-4o-audio-preview', // Specialized for audio/acoustic processing
@@ -1100,7 +1103,10 @@ ${contextHint ? `\nContext note: ${contextHint}` : ''}`;
 
       const ai = new GoogleGenAI({
         apiKey,
-        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+        httpOptions: { 
+          baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+          headers: { 'User-Agent': 'aistudio-build' } 
+        },
       });
 
       const cleanMimeType = mimeType.split(';')[0].trim() || 'audio/wav';
@@ -1184,6 +1190,7 @@ ${contextHint ? `\nContext note: ${contextHint}` : ''}`;
       const ai = new GoogleGenAI({
         apiKey,
         httpOptions: {
+          baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
           headers: {
             'User-Agent': 'aistudio-build',
           },

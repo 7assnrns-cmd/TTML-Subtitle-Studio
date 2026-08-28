@@ -58,7 +58,7 @@ const DEFAULT_CONFIG: TTMLConfig = {
   themeConfig: loadSavedTheme(),
 };
 
-const API_BASE_URL = (import.meta as any).env.VITE_API_URL || '';
+const API_BASE_URL = (import.meta as any).env.VITE_API_URL || window.location.origin;
 
 const INITIAL_LIVE_STATE: LiveAnalysisState = {
   isActive: false,
