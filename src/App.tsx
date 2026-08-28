@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Capacitor } from '@capacitor/core';
 import { Header } from './components/Header';
 import { NavigationDock } from './components/NavigationDock';
 import { DebugConsole } from './components/DebugConsole';
@@ -68,7 +69,20 @@ const DEFAULT_CONFIG: TTMLConfig = {
   themeConfig: loadSavedTheme(),
 };
 
-const API_BASE_URL = (import.meta as any).env.VITE_API_URL || window.location.origin;
+const PROD_API_URL = 'https://ais-pre-xzlo5557dhnd2jwtdxkun6-567533425465.europe-west2.run.app';
+
+const getApiBaseUrl = () => {
+  const envUrl = (import.meta as any).env.VITE_API_URL;
+  if (envUrl) return envUrl;
+  
+  if (Capacitor.isNativePlatform()) {
+    return PROD_API_URL;
+  }
+  
+  return window.location.origin;
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const INITIAL_LIVE_STATE: LiveAnalysisState = {
   isActive: false,
@@ -160,9 +174,18 @@ export default function App() {
     };
   }, []);
 
-  // Load default initial sample for an immediate rich experience
+  // Load default initial sample for an immediate rich experience & pre-fetch lazy modules
   useEffect(() => {
     loadSampleDataset('japanese-english-song');
+
+    // Pre-fetch all lazy-loaded tab and modal components in background for zero-latency tab switches
+    import('./components/MainHub');
+    import('./components/AudioPlayerWaveform');
+    import('./components/TTMLCodeViewer');
+    import('./components/StorageManager');
+    import('./components/LiveAudioAnalyzer');
+    import('./components/SettingsSection');
+    import('./components/InfoModal');
   }, []);
 
   const loadSampleDataset = useCallback((sampleId: string) => {
