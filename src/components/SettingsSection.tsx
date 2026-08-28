@@ -29,7 +29,7 @@ interface SettingsSectionProps {
 
 type TabKey = 'theme' | 'general' | 'language' | 'storage';
 
-export const SettingsSection: React.FC<SettingsSectionProps> = ({
+export const SettingsSection = React.memo<SettingsSectionProps>(({
   uiLanguage,
   setUiLanguage,
   config,
@@ -647,4 +647,4 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
     </div>
   </div>
 );
-};
+});

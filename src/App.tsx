@@ -75,7 +75,7 @@ const INITIAL_LIVE_STATE: LiveAnalysisState = {
 };
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState<'hub' | 'editor' | 'history'>('hub');
+  const [currentTab, setCurrentTab] = useState<'hub' | 'editor' | 'history' | 'settings'>('hub');
   const [uiLanguage, setUiLanguage] = useState<UILanguage>('en');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [filename, setFilename] = useState<string>('japanese_english_song.wav');

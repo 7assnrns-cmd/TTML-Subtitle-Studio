@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Copy,
   Check,
@@ -17,7 +17,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { ParagraphSegment, TTMLConfig } from '../types';
-import { generateTTML, generateSRT, generateVTT, generateLRC, generateEnhancedLRC } from '../utils/ttmlGenerator';
+import { generateTTML } from '../utils/ttmlGenerator';
 import { copyToClipboard } from '../utils/clipboard';
 import { UILanguage, getTranslation } from '../utils/i18n';
 import { CustomSelect } from './CustomSelect';
@@ -32,7 +32,7 @@ interface TTMLCodeViewerProps {
   uiLanguage: UILanguage;
 }
 
-export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
+export const TTMLCodeViewer = React.memo<TTMLCodeViewerProps>(({
   paragraphs,
   config,
   setConfig,
@@ -47,11 +47,13 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
 
   const t = (key: string) => getTranslation(uiLanguage, key);
 
-  const ttmlXml = generateTTML(paragraphs, config, {
-    duration,
-    totalWords: paragraphs.reduce((acc, p) => acc + p.words.length, 0),
-    detectedLanguages,
-  });
+  const ttmlXml = useMemo(() => {
+    return generateTTML(paragraphs, config, {
+      duration,
+      totalWords: paragraphs.reduce((acc, p) => acc + p.words.length, 0),
+      detectedLanguages,
+    });
+  }, [paragraphs, config, duration, detectedLanguages]);
 
   const baseTitle = filename.replace(/\.[^/.]+$/, '').replace(/[_\\-]/g, ' ');
   const jsonOutput = JSON.stringify(paragraphs, null, 2);
@@ -412,5 +414,5 @@ export const TTMLCodeViewer: React.FC<TTMLCodeViewerProps> = ({
       </div>
     </div>
   );
-};
+});
 

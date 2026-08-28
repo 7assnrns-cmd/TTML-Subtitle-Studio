@@ -18,7 +18,7 @@ interface AudioPlayerWaveformProps {
   config: TTMLConfig;
 }
 
-export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
+export const AudioPlayerWaveform = React.memo<AudioPlayerWaveformProps>(({
   audioUrl,
   duration,
   currentTime,
@@ -485,4 +485,4 @@ export const AudioPlayerWaveform: React.FC<AudioPlayerWaveformProps> = ({
       )}
     </div>
   );
-};
+});

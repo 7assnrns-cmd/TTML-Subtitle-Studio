@@ -40,7 +40,7 @@ const LANGUAGE_OPTIONS = POPULAR_LANGUAGES.map(l => ({ label: `${l.name} (${l.na
 const MODE_OPTIONS = [{ label: 'Universal Auto-Detect', value: 'auto' }, { label: 'Manual Language Target', value: 'manual' }];
 const THRESHOLD_OPTIONS = [{ label: '0.15s (Ultra-Tight)', value: 0.15 }, { label: '0.20s (Standard)', value: 0.2 }, { label: '0.35s (Relaxed)', value: 0.35 }];
 
-export const MainHub: React.FC<MainHubProps> = ({
+export const MainHub = React.memo<MainHubProps>(({
   onAnalyzeAudio,
   onSelectSample,
   onOpenHistoryItem,
@@ -416,4 +416,4 @@ export const MainHub: React.FC<MainHubProps> = ({
       )}
     </motion.div>
   );
-};
+});
