@@ -16,6 +16,7 @@ import { InfoModal } from './components/InfoModal';
 import { HistoryModal } from './components/HistoryModal';
 import { SettingsSection } from './components/SettingsSection';
 import { NavigationDock } from './components/NavigationDock';
+import { AndroidService } from './utils/androidService';
 import { AudioAnalysisResult, TTMLConfig, WordTiming, ParagraphSegment, PauseEvent } from './types';
 import { SAMPLE_DATASETS, createSyntheticAudioBuffer } from './utils/audioSamples';
 import { calculateTimingStats } from './utils/ttmlGenerator';
@@ -76,6 +77,16 @@ const INITIAL_LIVE_STATE: LiveAnalysisState = {
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<'hub' | 'editor' | 'history' | 'settings'>('hub');
+  
+  // Initialization and permissions
+  useEffect(() => {
+    const initApp = async () => {
+      await AndroidService.requestPermissions();
+      await AndroidService.getDeviceSpecs();
+    };
+    initApp();
+  }, []);
+
   const [uiLanguage, setUiLanguage] = useState<UILanguage>('en');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [filename, setFilename] = useState<string>('japanese_english_song.wav');

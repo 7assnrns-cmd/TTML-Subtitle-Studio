@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
+import OpenAI from 'openai';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import dotenv from 'dotenv';
@@ -269,119 +270,162 @@ ${contextHint ? `\nContext note: ${contextHint}` : ''}`;
 
     // Recommended production models for audio transcription and acoustic analysis
     // gemini-3.5-transcribe is the primary model in this environment with native audio transcription support
-    const candidateModels = ['gemini-3.5-transcribe', 'gemini-3.7-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
     let lastError: any = null;
     let responseText = '';
 
     const sysInstruction = 'You are an acoustic alignment engine that transcribes multilingual songs and speech, calculating exact word-level start/end timestamps and Apple Music song parts (Verse/Chorus) for TTML subtitles. NEVER clump words into sentence blocks. Every word must have separate begin and end micro-timestamps. Output strict JSON.';
 
-    for (const modelName of candidateModels) {
-      let attempts = 0;
-      const maxAttempts = 2;
+    // 1. PRIMARY PROVIDER: OpenAI ChatGPT
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (openaiKey) {
+      try {
+        console.log(`[TTML Backend] Attemping primary analysis with OpenAI (GPT-4o-audio)...`);
+        const openai = new OpenAI({ apiKey: openaiKey });
+        
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-4o-audio-preview', // Specialized for audio/acoustic processing
+          messages: [
+            { role: 'system', content: sysInstruction },
+            { 
+              role: 'user', 
+              content: [
+                { type: 'text', text: prompt },
+                { 
+                  type: 'input_audio', 
+                  input_audio: { 
+                    data: audioBase64, 
+                    format: cleanMimeType.includes('wav') ? 'wav' : 'mp3' 
+                  } 
+                }
+              ] 
+            }
+          ],
+          response_format: { type: 'json_object' }
+        });
 
-      while (attempts < maxAttempts) {
-        try {
-          attempts++;
-          console.log(`[TTML Backend] Running acoustic alignment with ${modelName} (attempt ${attempts}/${maxAttempts})...`);
+        if (completion.choices[0]?.message?.content) {
+          responseText = completion.choices[0].message.content;
+          console.log(`[TTML Backend] Successfully received timing data from OpenAI`);
+        }
+      } catch (err: any) {
+        console.warn(`[TTML Backend] OpenAI Primary Error: ${err.message}. Falling back to Gemini secondary...`);
+      }
+    } else {
+      console.log(`[TTML Backend] OPENAI_API_KEY not configured. Skipping primary and using Gemini...`);
+    }
 
-          const configObj: any = {
-            maxOutputTokens: 8192,
-            temperature: 0.1,
-            systemInstruction: sysInstruction,
-            responseMimeType: 'application/json',
-            responseSchema: responseSchema,
-          };
+    // 2. SECONDARY PROVIDER: Google Gemini (Fallback loop)
+    if (!responseText) {
+      const candidateModels = ['gemini-3.5-transcribe', 'gemini-3.7-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+      
+      for (const modelName of candidateModels) {
+        let attempts = 0;
+        const maxAttempts = 2;
 
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents: [
-              {
-                inlineData: {
-                  data: audioBase64,
-                  mimeType: cleanMimeType,
+        while (attempts < maxAttempts) {
+          try {
+            attempts++;
+            console.log(`[TTML Backend] Running acoustic alignment with ${modelName} (attempt ${attempts}/${maxAttempts})...`);
+
+            const configObj: any = {
+              maxOutputTokens: 8192,
+              temperature: 0.1,
+              systemInstruction: sysInstruction,
+              responseMimeType: 'application/json',
+              responseSchema: responseSchema,
+            };
+
+            const response = await ai.models.generateContent({
+              model: modelName,
+              contents: [
+                {
+                  inlineData: {
+                    data: audioBase64,
+                    mimeType: cleanMimeType,
+                  },
                 },
-              },
-              {
-                text: prompt,
-              },
-            ],
-            config: configObj,
-          });
+                {
+                  text: prompt,
+                },
+              ],
+              config: configObj,
+            });
 
-          if (response && response.text) {
-            responseText = response.text;
-            console.log(`[TTML Backend] Successfully received timing data from ${modelName}`);
-            break;
-          }
-        } catch (err: any) {
-          lastError = err;
-
-          const errMsg = err?.message || String(err);
-          const isNotFound404 =
-            err.status === 404 ||
-            err.code === 404 ||
-            errMsg.includes('404') ||
-            errMsg.includes('NOT_FOUND') ||
-            errMsg.includes('no longer available');
-
-          const isInvalidArgument400 =
-            err.status === 400 ||
-            err.code === 400 ||
-            errMsg.includes('400') ||
-            errMsg.includes('INVALID_ARGUMENT');
-
-          const isQuotaExhausted =
-            err.status === 429 ||
-            err.code === 429 ||
-            errMsg.includes('RESOURCE_EXHAUSTED') ||
-            errMsg.includes('quota') ||
-            errMsg.includes('Quota exceeded') ||
-            errMsg.includes('429');
-
-          const isTransient503 =
-            err.status === 503 ||
-            err.code === 503 ||
-            errMsg.includes('503') ||
-            errMsg.includes('high demand') ||
-            errMsg.includes('UNAVAILABLE') ||
-            errMsg.includes('temporary');
-
-          // Sanitize log to prevent rate-limit error messages from triggering test-harness filters
-          const isQuotaOrLimit = isQuotaExhausted || errMsg.includes('limit') || errMsg.includes('billing') || errMsg.includes('quota');
-          const statusDesc = isQuotaOrLimit 
-            ? 'Rate limit active on current model. Preparing failover.' 
-            : isTransient503 
-            ? 'Service busy. Preparing failover.' 
-            : 'Operational change. Preparing failover.';
-
-          console.log(`[TTML Studio Engine] Model ${modelName} status code: ${isQuotaOrLimit ? 429 : 200}. Details: ${statusDesc}`);
-
-          if (isNotFound404 || isInvalidArgument400) {
-            // Model not found or invalid args, immediately failover to next candidate model
-            break;
-          } else if (isQuotaExhausted) {
-            // Quota reached on this model, brief pause then failover to next candidate model
-            await sleep(1200);
-            break;
-          } else if (isTransient503) {
-            if (attempts < maxAttempts) {
-              const backoffMs = 1500 * attempts;
-              await sleep(backoffMs);
-            } else {
+            if (response && response.text) {
+              responseText = response.text;
+              console.log(`[TTML Backend] Successfully received timing data from ${modelName}`);
               break;
             }
-          } else {
-            if (attempts < maxAttempts) {
-              await sleep(1000 * attempts);
-            } else {
+          } catch (err: any) {
+            lastError = err;
+
+            const errMsg = err?.message || String(err);
+            const isNotFound404 =
+              err.status === 404 ||
+              err.code === 404 ||
+              errMsg.includes('404') ||
+              errMsg.includes('NOT_FOUND') ||
+              errMsg.includes('no longer available');
+
+            const isInvalidArgument400 =
+              err.status === 400 ||
+              err.code === 400 ||
+              errMsg.includes('400') ||
+              errMsg.includes('INVALID_ARGUMENT');
+
+            const isQuotaExhausted =
+              err.status === 429 ||
+              err.code === 429 ||
+              errMsg.includes('RESOURCE_EXHAUSTED') ||
+              errMsg.includes('quota') ||
+              errMsg.includes('Quota exceeded') ||
+              errMsg.includes('429');
+
+            const isTransient503 =
+              err.status === 503 ||
+              err.code === 503 ||
+              errMsg.includes('503') ||
+              errMsg.includes('high demand') ||
+              errMsg.includes('UNAVAILABLE') ||
+              errMsg.includes('temporary');
+
+            // Sanitize log to prevent rate-limit error messages from triggering test-harness filters
+            const isQuotaOrLimit = isQuotaExhausted || errMsg.includes('limit') || errMsg.includes('billing') || errMsg.includes('quota');
+            const statusDesc = isQuotaOrLimit 
+              ? 'Rate limit active on current model. Preparing failover.' 
+              : isTransient503 
+              ? 'Service busy. Preparing failover.' 
+              : 'Operational change. Preparing failover.';
+
+            console.log(`[TTML Studio Engine] Model ${modelName} status code: ${isQuotaOrLimit ? 429 : 200}. Details: ${statusDesc}`);
+
+            if (isNotFound404 || isInvalidArgument400) {
+              // Model not found or invalid args, immediately failover to next candidate model
               break;
+            } else if (isQuotaExhausted) {
+              // Quota reached on this model, brief pause then failover to next candidate model
+              await sleep(1200);
+              break;
+            } else if (isTransient503) {
+              if (attempts < maxAttempts) {
+                const backoffMs = 1500 * attempts;
+                await sleep(backoffMs);
+              } else {
+                break;
+              }
+            } else {
+              if (attempts < maxAttempts) {
+                await sleep(1000 * attempts);
+              } else {
+                break;
+              }
             }
           }
         }
-      }
 
-      if (responseText) {
-        break;
+        if (responseText) {
+          break;
+        }
       }
     }
 

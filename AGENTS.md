@@ -26,3 +26,19 @@ import { CustomSelect } from './CustomSelect';
   ]}
 />
 ```
+
+# Project Android Standards: Permissions & Hardware
+
+## Android Permissions Protocol
+All Android-specific permissions must be explicitly declared in `AndroidManifest.xml` and requested at runtime using the `AndroidService` utility.
+
+### Mandatory Declarations:
+1. **Network**: `INTERNET`, `ACCESS_NETWORK_STATE`.
+2. **Media/Storage**: `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE` (maxSdk 32), `READ_MEDIA_AUDIO`.
+3. **Notifications**: `POST_NOTIFICATIONS` (Android 13+).
+
+## Device Specification Detection
+The application must perform a hardware audit on startup via `AndroidService.getDeviceSpecs()`. This logs:
+- **Manufacturer & Model**
+- **Android SDK Version** (for API-specific features)
+- **Screen Dimensions & Memory Usage** (for adaptive UI scaling)
