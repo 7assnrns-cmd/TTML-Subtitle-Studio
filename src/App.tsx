@@ -52,9 +52,11 @@ const DEFAULT_CONFIG: TTMLConfig = {
   visualizerSensitivity: 5,
   subtitleFontWeight: '600',
   subtitleLetterSpacing: '0px',
-  audioBufferDuration: 20,
+  audioBufferDuration: 15, // Optimized for mobile stability
   themeConfig: loadSavedTheme(),
 };
+
+const API_BASE_URL = (import.meta as any).env.VITE_API_URL || '';
 
 const INITIAL_LIVE_STATE: LiveAnalysisState = {
   isActive: false,
@@ -312,41 +314,59 @@ export default function App() {
 
         const chunkMime = chunk.isOptimized ? 'audio/wav' : cleanMime;
 
-        const response = await fetch('/api/analyze-chunk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            audioBase64: chunk.base64,
-            mimeType: chunkMime,
-            chunkIndex: index,
-            totalChunks,
-            timeOffset: chunk.startTime,
-            startWordIndex: 1, // Will be unified during zero-loss stitching
-            startParaIndex: 1,
-            titleHint: uploadedFilename,
-            languageMode: mode,
-            selectedLanguage: targetLang,
-            lyricsText,
-          }),
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout for mobile network stability
 
-        const rawText = await response.text();
-        let chunkData: any = {};
+        let chunkData: any = null;
+
         try {
-          chunkData = rawText ? JSON.parse(rawText) : {};
-        } catch {
-          if (!response.ok) {
-            throw new Error(`Chunk ${index + 1} analysis failed (HTTP ${response.status}): ${rawText.substring(0, 100)}`);
+          const response = await fetch(`${API_BASE_URL}/api/analyze-chunk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              audioBase64: chunk.base64,
+              mimeType: chunkMime,
+              chunkIndex: index,
+              totalChunks,
+              timeOffset: chunk.startTime,
+              startWordIndex: 1, // Will be unified during zero-loss stitching
+              startParaIndex: 1,
+              titleHint: uploadedFilename,
+              languageMode: mode,
+              selectedLanguage: targetLang,
+              lyricsText,
+            }),
+          });
+
+          clearTimeout(timeoutId);
+          const rawText = await response.text();
+          
+          try {
+            chunkData = rawText ? JSON.parse(rawText) : {};
+          } catch (parseErr) {
+            console.error(`[Chunk Parse Failure] Raw response for Chunk ${index + 1}:`, rawText);
+            if (!response.ok) {
+              throw new Error(`Chunk ${index + 1} analysis failed (HTTP ${response.status}): ${rawText.substring(0, 100)}`);
+            }
+            throw new Error(`Unable to parse response from server for Chunk ${index + 1}. Check console for raw text.`);
           }
-          throw new Error(`Unable to parse response from server for Chunk ${index + 1}.`);
+
+          if (!response.ok) {
+            throw new Error(chunkData.error || `Chunk ${index + 1} analysis failed (HTTP ${response.status})`);
+          }
+
+          chunkResults[index] = chunkData;
+          completedChunksCount++;
+        } catch (err: any) {
+          clearTimeout(timeoutId);
+          if (err.name === 'AbortError') {
+            throw new Error(`Chunk ${index + 1} analysis timed out. Please check your network stability.`);
+          }
+          throw err;
         }
 
-        if (!response.ok) {
-          throw new Error(chunkData.error || `Chunk ${index + 1} analysis failed (HTTP ${response.status})`);
-        }
-
-        chunkResults[index] = chunkData;
-        completedChunksCount++;
+        if (!chunkData) return;
 
         // Yield to main thread to prevent UI freezing
         await new Promise((resolve) => setTimeout(resolve, 0));

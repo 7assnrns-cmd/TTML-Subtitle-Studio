@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "VITE_API_URL=$APP_URL vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs --define:process.env.GEMINI_API_KEY=\"$GEMINI_API_KEY\"",
     "start": "node dist/server.cjs",
     "cap:sync": "cap sync",
     "cap:android": "cap open android",

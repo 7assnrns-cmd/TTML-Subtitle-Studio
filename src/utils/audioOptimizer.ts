@@ -17,7 +17,7 @@ export interface AudioChunk {
 
 export async function optimizeAndChunkAudio(
   fileOrBlob: File | Blob,
-  maxChunkDurationSec = 40,
+  maxChunkDurationSec = 20,
   onProgress?: (msg: string, percent?: number) => void
 ): Promise<{
   chunks: AudioChunk[];

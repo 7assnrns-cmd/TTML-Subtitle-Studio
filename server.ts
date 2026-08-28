@@ -20,22 +20,19 @@ function repairAndParseJson(rawText: string): any {
     throw new Error('Empty response from AI engine');
   }
 
-  // 1. Clean whitespace and markdown fences
+  // 1. Clean whitespace and markdown fences with robust regex
   let cleaned = rawText.trim();
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.substring(7).trim();
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.substring(3).trim();
-  }
-  if (cleaned.endsWith('```')) {
-    cleaned = cleaned.substring(0, cleaned.length - 3).trim();
-  }
+  
+  // Strip any markdown code block wrappers (e.g., ```json ... ``` or ``` ... ```)
+  cleaned = cleaned.replace(/^```[a-z]*\s*/i, '');
+  cleaned = cleaned.replace(/\s*```$/i, '');
+  cleaned = cleaned.trim();
 
   // 2. Try direct parse
   try {
     return JSON.parse(cleaned);
   } catch {
-    // Proceed to extraction and structural recovery
+    console.warn('[TTML Repair] Direct JSON parse failed, attempting deep structural recovery...');
   }
 
   // 3. Extract from first '{' or '[' to the last '}' or ']'
@@ -128,6 +125,10 @@ function repairAndParseJson(rawText: string): any {
     }
   }
 
+  // Final failure: Log raw response for debugging as requested by user
+  console.error('[TTML Repair Failure] All recovery attempts failed.');
+  console.error('[RAW TEXT START]\n' + rawText + '\n[RAW TEXT END]');
+  
   throw new Error('Unable to parse phonetic timing data from AI engine. Please retry.');
 }
 
