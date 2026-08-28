@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
   Copy,
   Check,
@@ -44,6 +44,26 @@ export const TTMLCodeViewer = React.memo<TTMLCodeViewerProps>(({
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
   const [activeTab, setActiveTab] = useState<'ttml' | 'breakdown'>('ttml');
+  const [virtualScrollTop, setVirtualScrollTop] = useState(0);
+
+  const handleVirtualScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setVirtualScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  const itemHeight = 110;
+  const containerHeight = 220;
+  const startIndex = Math.max(0, Math.floor(virtualScrollTop / itemHeight) - 2);
+  const endIndex = Math.min(paragraphs.length, Math.floor((virtualScrollTop + containerHeight) / itemHeight) + 2);
+
+  const visibleParagraphs = useMemo(() => {
+    return paragraphs.slice(startIndex, endIndex).map((p, idx) => ({
+      p,
+      originalIndex: startIndex + idx,
+    }));
+  }, [paragraphs, startIndex, endIndex]);
+
+  const paddingTop = startIndex * itemHeight;
+  const paddingBottom = Math.max(0, paragraphs.length - endIndex) * itemHeight;
 
   const t = (key: string) => getTranslation(uiLanguage, key);
 
@@ -369,38 +389,43 @@ export const TTMLCodeViewer = React.memo<TTMLCodeViewerProps>(({
                 <Clock className="w-3.5 h-3.5" />
                 3. Synchronized Timed Text List ({paragraphs.length} Lines)
               </div>
-              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                {paragraphs.map((p, idx) => (
-                  <div key={p.id || idx} className="p-2.5 bg-slate-900/70 rounded-xl border border-slate-800/80 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <span className="font-mono text-cyan-300 font-medium">
-                        [{p.start.toFixed(2)}s &rarr; {p.end.toFixed(2)}s]
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-semibold">
-                          {p.songPart || 'Verse'}
+              <div 
+                className="space-y-2 max-h-[220px] overflow-y-auto pr-1"
+                onScroll={handleVirtualScroll}
+              >
+                <div style={{ paddingTop, paddingBottom }} className="space-y-2">
+                  {visibleParagraphs.map(({ p, originalIndex }) => (
+                    <div key={p.id || originalIndex} className="p-2.5 bg-slate-900/70 rounded-xl border border-slate-800/80 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-400">
+                        <span className="font-mono text-cyan-300 font-medium">
+                          [{p.start.toFixed(2)}s &rarr; {p.end.toFixed(2)}s]
                         </span>
-                        <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono">
-                          {p.agentId || 'v1'}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-semibold">
+                            {p.songPart || 'Verse'}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono">
+                            {p.agentId || 'v1'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="font-medium text-slate-100 text-xs">
+                        {p.text}
+                      </div>
+                      <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-800/60">
+                        {p.words.map((w) => (
+                          <span
+                            key={w.id}
+                            className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] text-slate-300 flex items-center gap-1"
+                          >
+                            <span className="text-white">{w.word}</span>
+                            <span className="text-slate-500 text-[9px] font-mono">({w.start.toFixed(2)}s)</span>
+                          </span>
+                        ))}
                       </div>
                     </div>
-                    <div className="font-medium text-slate-100 text-xs">
-                      {p.text}
-                    </div>
-                    <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-800/60">
-                      {p.words.map((w) => (
-                        <span
-                          key={w.id}
-                          className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] text-slate-300 flex items-center gap-1"
-                        >
-                          <span className="text-white">{w.word}</span>
-                          <span className="text-slate-500 text-[9px] font-mono">({w.start.toFixed(2)}s)</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </div>
