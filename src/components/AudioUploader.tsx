@@ -21,6 +21,7 @@ import { SAMPLE_DATASETS } from '../utils/audioSamples';
 import { POPULAR_LANGUAGES } from '../utils/languages';
 import { UILanguage, getTranslation } from '../utils/i18n';
 import { searchYouTubeMusic, importYouTubeTrack, YouTubeTrackResult } from '../services/youtubeMusic';
+import { requestMicrophonePermission, checkFileAccessPermission } from '../utils/permissions';
 
 interface AudioUploaderProps {
   onAnalyzeAudio: (
@@ -179,6 +180,11 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
 
   const startRecording = async () => {
     setUploadError(null);
+    const micPerm = await requestMicrophonePermission();
+    if (!micPerm.granted) {
+      setUploadError(micPerm.message || 'Microphone access denied or not available. Please grant mic permissions in your settings.');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
@@ -450,7 +456,14 @@ export const AudioUploader: React.FC<AudioUploaderProps> = ({
                 }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={async () => {
+                  const perm = await checkFileAccessPermission();
+                  if (!perm.granted && perm.message) {
+                    setUploadError(perm.message);
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }}
                 className={`lg:col-span-2 relative cursor-pointer border-2 border-dashed rounded-2xl p-6 sm:p-7 flex flex-col items-center justify-center text-center transition-all backdrop-blur-md ${
                   isDragging
                     ? 'border-cyan-400 bg-cyan-500/15 scale-[0.99]'
