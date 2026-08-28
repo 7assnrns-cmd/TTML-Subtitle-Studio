@@ -71,17 +71,17 @@ jobs:
             exit 1
           fi
 
-      - name: Build Android Release APK
+      - name: Build & Sign Android Release APK
         working-directory: ./android
         run: |
-          echo "=== Building Android Release APK ==="
+          echo "=== Building & Signing Android Release APK ==="
           ./gradlew assembleRelease --stacktrace || { echo "::error::Android Gradle APK compilation failed!"; exit 1; }
 
-      - name: Upload Production APK Artifact
+      - name: Upload Signed APK Artifact
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: app-release-unsigned-apk
+          name: app-release-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
