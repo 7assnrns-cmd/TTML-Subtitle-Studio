@@ -3,18 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Header } from './components/Header';
-import { MainHub } from './components/MainHub';
-import { StorageManager } from './components/StorageManager';
-import { LiveAudioAnalyzer, LiveAnalysisState } from './components/LiveAudioAnalyzer';
-import { AudioPlayerWaveform } from './components/AudioPlayerWaveform';
-import { TTMLCodeViewer } from './components/TTMLCodeViewer';
-import { LanguageSettingsModal } from './components/LanguageSettingsModal';
-import { InfoModal } from './components/InfoModal';
-import { HistoryModal } from './components/HistoryModal';
-import { SettingsSection } from './components/SettingsSection';
 import { NavigationDock } from './components/NavigationDock';
 import { DebugConsole } from './components/DebugConsole';
 import { AndroidService } from './utils/androidService';
@@ -27,7 +18,26 @@ import { UILanguage, getTranslation } from './utils/i18n';
 import { loadSavedTheme, applyThemeVariables } from './utils/theme';
 import { saveToHistory, SavedAnalysis } from './utils/storage';
 import { requestNotificationPermission, sendProgressNotification, sendCompletionNotification, sendErrorNotification } from './utils/notifications';
-import { AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { AlertCircle, RefreshCw, Sparkles, Loader2 } from 'lucide-react';
+import type { LiveAnalysisState } from './components/LiveAudioAnalyzer';
+
+// Code splitting (Lazy loaded chunks)
+const MainHub = lazy(() => import('./components/MainHub').then(m => ({ default: m.MainHub })));
+const StorageManager = lazy(() => import('./components/StorageManager').then(m => ({ default: m.StorageManager })));
+const LiveAudioAnalyzer = lazy(() => import('./components/LiveAudioAnalyzer').then(m => ({ default: m.LiveAudioAnalyzer })));
+const AudioPlayerWaveform = lazy(() => import('./components/AudioPlayerWaveform').then(m => ({ default: m.AudioPlayerWaveform })));
+const TTMLCodeViewer = lazy(() => import('./components/TTMLCodeViewer').then(m => ({ default: m.TTMLCodeViewer })));
+const LanguageSettingsModal = lazy(() => import('./components/LanguageSettingsModal').then(m => ({ default: m.LanguageSettingsModal })));
+const InfoModal = lazy(() => import('./components/InfoModal').then(m => ({ default: m.InfoModal })));
+const HistoryModal = lazy(() => import('./components/HistoryModal').then(m => ({ default: m.HistoryModal })));
+const SettingsSection = lazy(() => import('./components/SettingsSection').then(m => ({ default: m.SettingsSection })));
+
+const FallbackLoader = () => (
+  <div className="flex flex-col items-center justify-center w-full h-full p-12 text-slate-400">
+    <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
+    <span className="text-sm font-medium tracking-wide">Loading component...</span>
+  </div>
+);
 
 const DEFAULT_CONFIG: TTMLConfig = {
   profile: 'apple-music',
@@ -835,8 +845,11 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="transform-gpu will-change-transform opacity-100"
             >
-              <LiveAudioAnalyzer state={liveState} filename={filename} uiLanguage={uiLanguage} />
+              <Suspense fallback={<FallbackLoader />}>
+                <LiveAudioAnalyzer state={liveState} filename={filename} uiLanguage={uiLanguage} />
+              </Suspense>
             </motion.div>
           ) : currentTab === 'hub' ? (
             <motion.div
@@ -845,26 +858,29 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 15 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="transform-gpu will-change-transform opacity-100"
             >
-              <MainHub
-                onAnalyzeAudio={handleAnalyzeAudio}
-                onSelectSample={(sId) => {
-                  loadSampleDataset(sId);
-                  setCurrentTab('editor');
-                }}
-                onOpenHistoryItem={(item) => {
-                  setAnalysisResult(item.data);
-                  setFilename(item.filename);
-                  setDuration(item.data.duration);
-                  setConfig((prev) => ({
-                    ...prev,
-                    title: item.data.title || item.filename,
-                  }));
-                  setCurrentTab('editor');
-                }}
-                onNavigateToTab={setCurrentTab}
-                uiLanguage={uiLanguage}
-              />
+              <Suspense fallback={<FallbackLoader />}>
+                <MainHub
+                  onAnalyzeAudio={handleAnalyzeAudio}
+                  onSelectSample={(sId) => {
+                    loadSampleDataset(sId);
+                    setCurrentTab('editor');
+                  }}
+                  onOpenHistoryItem={(item) => {
+                    setAnalysisResult(item.data);
+                    setFilename(item.filename);
+                    setDuration(item.data.duration);
+                    setConfig((prev) => ({
+                      ...prev,
+                      title: item.data.title || item.filename,
+                    }));
+                    setCurrentTab('editor');
+                  }}
+                  onNavigateToTab={setCurrentTab}
+                  uiLanguage={uiLanguage}
+                />
+              </Suspense>
             </motion.div>
           ) : currentTab === 'history' ? (
             <motion.div
@@ -873,20 +889,23 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -15 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="transform-gpu will-change-transform opacity-100"
             >
-              <StorageManager
-                onSelectSong={(item) => {
-                  setAnalysisResult(item.data);
-                  setFilename(item.filename);
-                  setDuration(item.data.duration);
-                  setConfig((prev) => ({
-                    ...prev,
-                    title: item.data.title || item.filename,
-                  }));
-                  setCurrentTab('editor');
-                }}
-                uiLanguage={uiLanguage}
-              />
+              <Suspense fallback={<FallbackLoader />}>
+                <StorageManager
+                  onSelectSong={(item) => {
+                    setAnalysisResult(item.data);
+                    setFilename(item.filename);
+                    setDuration(item.data.duration);
+                    setConfig((prev) => ({
+                      ...prev,
+                      title: item.data.title || item.filename,
+                    }));
+                    setCurrentTab('editor');
+                  }}
+                  uiLanguage={uiLanguage}
+                />
+              </Suspense>
             </motion.div>
           ) : currentTab === 'settings' ? (
             <motion.div
@@ -895,13 +914,16 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="transform-gpu will-change-transform opacity-100"
             >
-              <SettingsSection
-                uiLanguage={uiLanguage}
-                setUiLanguage={setUiLanguage}
-                config={config}
-                setConfig={setConfig}
-              />
+              <Suspense fallback={<FallbackLoader />}>
+                <SettingsSection
+                  uiLanguage={uiLanguage}
+                  setUiLanguage={setUiLanguage}
+                  config={config}
+                  setConfig={setConfig}
+                />
+              </Suspense>
             </motion.div>
           ) : (
             <motion.div
@@ -910,10 +932,10 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-              className="space-y-6"
+              className="space-y-6 transform-gpu will-change-transform opacity-100"
             >
               {analysisResult ? (
-                <>
+                <Suspense fallback={<FallbackLoader />}>
                   {/* Sleek Active Track Header */}
                   <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-xl">
                     <div className="flex items-center gap-3">
@@ -974,7 +996,7 @@ export default function App() {
                       uiLanguage={uiLanguage}
                     />
                   </div>
-                </>
+                </Suspense>
               ) : (
                 /* Empty Studio State */
                 <div className="p-8 sm:p-12 rounded-3xl glass-card border border-white/10 text-center space-y-6 max-w-2xl mx-auto my-8 shadow-2xl bg-slate-900/60 backdrop-blur-xl">

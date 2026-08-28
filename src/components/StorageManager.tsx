@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Database,
   Trash2,
@@ -63,13 +63,13 @@ export const StorageManager: React.FC<StorageManagerProps> = ({
     reloadData();
   }, []);
 
-  const handleDeleteItem = (id: string, e: React.MouseEvent) => {
+  const handleDeleteItem = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     removeHistoryItem(id);
     reloadData();
-  };
+  }, []);
 
-  const handleClearAll = () => {
+  const handleClearAll = useCallback(() => {
     if (!confirmClear) {
       setConfirmClear(true);
       setTimeout(() => setConfirmClear(false), 4000);
@@ -78,9 +78,9 @@ export const StorageManager: React.FC<StorageManagerProps> = ({
     clearHistory();
     setConfirmClear(false);
     reloadData();
-  };
+  }, [confirmClear]);
 
-  const handleExportItem = (item: SavedAnalysis, format: 'ttml' | 'json', e: React.MouseEvent) => {
+  const handleExportItem = useCallback((item: SavedAnalysis, format: 'ttml' | 'json', e: React.MouseEvent) => {
     e.stopPropagation();
     const baseName = item.filename.replace(/\.[^/.]+$/, '');
     let content = '';
@@ -129,9 +129,9 @@ export const StorageManager: React.FC<StorageManagerProps> = ({
 
     setDownloadSuccessId(`${item.id}_${format}`);
     setTimeout(() => setDownloadSuccessId(null), 2000);
-  };
+  }, []);
 
-  const handleExportBackup = () => {
+  const handleExportBackup = useCallback(() => {
     const jsonStr = exportHistoryAsJson();
     const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -142,7 +142,7 @@ export const StorageManager: React.FC<StorageManagerProps> = ({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  };
+  }, []);
 
   const filteredHistory = useMemo(() => {
     return history.filter((item) => {
