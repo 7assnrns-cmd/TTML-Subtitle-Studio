@@ -16,6 +16,7 @@ import { InfoModal } from './components/InfoModal';
 import { HistoryModal } from './components/HistoryModal';
 import { SettingsSection } from './components/SettingsSection';
 import { NavigationDock } from './components/NavigationDock';
+import { DebugConsole } from './components/DebugConsole';
 import { AndroidService } from './utils/androidService';
 import { AudioAnalysisResult, TTMLConfig, WordTiming, ParagraphSegment, PauseEvent } from './types';
 import { SAMPLE_DATASETS, createSyntheticAudioBuffer } from './utils/audioSamples';
@@ -1007,6 +1008,8 @@ export default function App() {
         isOpen={isInfoOpen}
         onClose={() => setIsInfoOpen(false)}
       />
+
+      <DebugConsole />
     </div>
   );
 }
